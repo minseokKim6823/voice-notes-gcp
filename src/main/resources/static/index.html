@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>보이스 노트</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/search.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-icon">◉</span><span>보이스 노트</span></div>
+      <button id="new-note" class="new-button">＋ 새 노트</button>
+      <input id="search" class="search-input" type="search" placeholder="전사 내용 검색" aria-label="전사 내용 검색">
+      <div class="section-label">내 노트</div>
+      <div id="note-list" class="note-list"></div>
+      <div class="sidebar-foot">Google Cloud 기반 음성 기록</div>
+    </aside>
+    <main>
+      <header><span>모든 음성을, 다시 찾을 수 있는 기록으로</span><span class="header-tag">Google Speech · EXAONE · Elasticsearch</span></header>
+      <section id="empty-view" class="empty-view">
+        <div class="eyebrow">VOICE NOTES</div>
+        <h1>녹음이 끝나면<br><em>정리가 시작됩니다.</em></h1>
+        <p>회의와 강의의 음성을 업로드하거나 바로 녹음하세요.<br>화자별 한국어 전사와 핵심 요약을 하나의 노트에 담습니다.</p>
+        <div class="composer">
+          <label for="title">노트 제목</label>
+          <input id="title" type="text" placeholder="예: 월요일 팀 회의" maxlength="120">
+          <div class="composer-actions">
+            <label class="upload-button" for="audio-file">↥ &nbsp;파일 선택</label>
+            <input id="audio-file" type="file" accept=".webm,.wav,.mp3,.flac,.ogg,audio/*" hidden>
+            <button id="record-button" class="record-button">● &nbsp;녹음 시작</button>
+          </div>
+          <div id="selected-file" class="selected-file">webm · wav · mp3 · flac · ogg / 최대 30MB</div>
+          <button id="submit-button" class="submit-button" disabled>전사 및 요약 시작 →</button>
+        </div>
+      </section>
+      <section id="note-view" class="note-view" hidden>
+        <div class="note-top"><button id="back-button" class="text-button">← 전체 노트</button><span id="note-date"></span></div>
+        <h1 id="note-title"></h1>
+        <div class="status-row"><span id="note-status" class="badge"></span><span id="note-file"></span></div>
+        <audio id="note-audio" controls preload="none"></audio>
+        <div id="note-error" class="error-box" hidden></div>
+        <button id="retry-button" class="retry-button" hidden>다시 처리하기</button>
+        <div class="content-grid">
+          <article><h2>✦ AI 요약</h2><div id="note-summary" class="body-text"></div></article>
+          <article><h2>☰ 전체 전사</h2><div id="note-transcript" class="body-text"></div></article>
+        </div>
+      </section>
+      <div id="message" class="message" role="status"></div>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

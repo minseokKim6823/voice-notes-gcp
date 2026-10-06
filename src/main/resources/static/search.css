@@ -1,0 +1,3 @@
+.search-input{width:100%;background:#20393a;border:1px solid #416060;border-radius:9px;color:#f3f5f0;padding:10px 11px;outline:0;margin-bottom:26px;font-size:12px}
+.search-input::placeholder{color:#a1b6ab}
+.search-input:focus{border-color:#c9f1a8}
