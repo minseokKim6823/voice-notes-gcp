@@ -1,0 +1,17 @@
+.git/
+.gradle/
+.gradle-cache/
+build/
+.idea/
+*.log
+.env
+.env.*
+application-local.properties
+application-local.yml
+application-local.yaml
+.docker-config/
+*.json.key
+*.pem
+*.p12
+*.key
+*credentials*.json

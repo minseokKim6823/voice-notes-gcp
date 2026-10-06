@@ -1,0 +1,20 @@
+# Copy to application-local.yml. Spring Boot loads that file from the project root.
+# Use an existing MariaDB database allocated to this application.
+spring:
+  datasource:
+    url: jdbc:mariadb://localhost:3306/voice_notes
+    username: YOUR_DB_USER
+    password: ""
+
+voice-notes:
+  project-id: ""
+  bucket: ""
+  elasticsearch-url: http://localhost:9202
+  exaone:
+    # Chat Completions API base URL, including /v1 (or your provider's equivalent prefix).
+    base-url: ""
+    api-key: ""
+    # Use the exact model ID exposed by your API server, or a Dedicated endpoint ID.
+    model: LGAI-EXAONE/K-EXAONE-2.0-750B-A37B
+    # Disable only if the API gateway rejects chat_template_kwargs.
+    include-chat-template-kwargs: true

@@ -1,0 +1,43 @@
+server:
+  port: ${PORT:8080}
+  tomcat:
+    connection-timeout: 10m
+spring:
+  config:
+    import: optional:file:./application-local.yml
+  datasource:
+    url: ${DATABASE_URL:jdbc:mariadb://localhost:3306/voice_notes}
+    username: ${DATABASE_USER:}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: org.mariadb.jdbc.Driver
+  sql:
+    init:
+      mode: ${DATABASE_INIT_MODE:always}
+      schema-locations: classpath:db/schema-mariadb.sql
+      encoding: UTF-8
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 31MB
+voice-notes:
+  project-id: ${GOOGLE_CLOUD_PROJECT:}
+  bucket: ${VOICE_NOTES_BUCKET:}
+  speech-location: ${VOICE_NOTES_SPEECH_LOCATION:us}
+  speech-model: ${VOICE_NOTES_SPEECH_MODEL:chirp_3}
+  elasticsearch-url: ${ELASTICSEARCH_URL:http://localhost:9202}
+  elasticsearch-api-key: ${ELASTICSEARCH_API_KEY:}
+  exaone:
+    base-url: ${EXAONE_BASE_URL:}
+    api-key: ${EXAONE_API_KEY:}
+    model: ${EXAONE_MODEL:LGAI-EXAONE/K-EXAONE-2.0-750B-A37B}
+    timeout: ${EXAONE_TIMEOUT:10m}
+    max-output-tokens: ${EXAONE_MAX_OUTPUT_TOKENS:4096}
+    include-chat-template-kwargs: ${EXAONE_INCLUDE_CHAT_TEMPLATE_KWARGS:true}

@@ -1,0 +1,19 @@
+# Isolated database for integration checks; never connects to the user's MariaDB.
+name: voice-notes-validation
+services:
+  mariadb:
+    image: mariadb:11.2
+    environment:
+      MARIADB_DATABASE: voice_notes_test
+      MARIADB_USER: voice_notes_test
+      MARIADB_PASSWORD: local-test-only
+      MARIADB_ROOT_PASSWORD: local-root-test-only
+    ports:
+      - "127.0.0.1:53317:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
