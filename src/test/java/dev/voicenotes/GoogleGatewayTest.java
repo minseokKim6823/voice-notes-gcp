@@ -11,6 +11,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GoogleGatewayTest {
     @Test
+    void requestsDiarizationAndOptionalWordTimestamps() {
+        var precise = new GoogleGateway(new ObjectMapper(), "test-project", "test-bucket", "us", "chirp_3", true);
+        var standard = new GoogleGateway(new ObjectMapper(), "test-project", "test-bucket", "us", "chirp_3", false);
+        var json = new ObjectMapper();
+        assertThat(json.valueToTree(precise.recognitionConfig()).path("features").path("enableWordTimeOffsets").asBoolean()).isTrue();
+        assertThat(json.valueToTree(standard.recognitionConfig()).path("features").path("enableWordTimeOffsets").asBoolean()).isFalse();
+        assertThat(json.valueToTree(precise.recognitionConfig()).path("features").path("diarizationConfig").isObject()).isTrue();
+    }
+
+    @Test
     void readsCurrentInlineBatchResponse() throws Exception {
         String result = """
             {"inlineResult":{"transcript":{"results":[{"alternatives":[{
@@ -60,5 +70,35 @@ class GoogleGatewayTest {
         String apiResults = "[{\"alternatives\":[{\"transcript\":\"테스트 음성\"}]}]";
         List<TranscriptSegment> segments = GoogleGateway.parseResults(new ObjectMapper().readTree(apiResults));
         assertThat(segments).containsExactly(new TranscriptSegment(0, "미확인", "테스트 음성", 0, 0));
+    }
+
+    @Test
+    void splitsSameSpeakerAfterLongPauseAndNormalizesMissingLabels() throws Exception {
+        var results = new ObjectMapper().readTree("""
+                [{"alternatives":[{"words":[
+                  {"word":"첫 발언","speakerLabel":" 1 ","startOffset":"0s","endOffset":"1s"},
+                  {"word":"다음 발언","speakerLabel":"1","startOffset":"3s","endOffset":"4s"},
+                  {"word":"누구죠","speakerLabel":" ","startOffset":"4s","endOffset":"5s"}]}]}]
+                """);
+        assertThat(GoogleGateway.parseResults(results)).containsExactly(
+                new TranscriptSegment(0, "1", "첫 발언", 0, 1000),
+                new TranscriptSegment(1, "1", "다음 발언", 3000, 4000),
+                new TranscriptSegment(2, "미확인", "누구죠", 4000, 5000));
+    }
+
+    @Test
+    void fallsBackToTranscriptWhenWordEntriesAreBlank() throws Exception {
+        var results = new ObjectMapper().readTree("""
+                [{"alternatives":[{"transcript":"남겨야 하는 전사","words":[{"word":"  "},{}]}]}]
+                """);
+        assertThat(GoogleGateway.parseResults(results)).containsExactly(new TranscriptSegment(0, "미확인", "남겨야 하는 전사", 0, 0));
+    }
+
+    @Test
+    void invalidTimesDoNotProduceNegativeOrInfiniteOffsets() throws Exception {
+        var results = new ObjectMapper().readTree("""
+                [{"alternatives":[{"words":[{"word":"발언","startOffset":"-1s","endOffset":"Infinitys"}]}]}]
+                """);
+        assertThat(GoogleGateway.parseResults(results)).containsExactly(new TranscriptSegment(0, "미확인", "발언", 0, 0));
     }
 }

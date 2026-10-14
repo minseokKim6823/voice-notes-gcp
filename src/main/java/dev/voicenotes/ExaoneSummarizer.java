@@ -15,7 +15,7 @@ public class ExaoneSummarizer {
     public String summarize(List<TranscriptSegment> segments) throws IOException {
         StringBuilder transcript = new StringBuilder();
         for (TranscriptSegment segment : segments) {
-            transcript.append("화자 ").append(segment.speaker()).append(": ").append(segment.text()).append('\n');
+            transcript.append(segment.displayName()).append(": ").append(segment.text()).append('\n');
         }
         List<String> partial = new ArrayList<>();
         String text = transcript.toString();

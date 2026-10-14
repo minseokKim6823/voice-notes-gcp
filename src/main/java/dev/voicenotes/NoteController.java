@@ -34,6 +34,38 @@ public class NoteController {
     @PostMapping("/{id}/process")
     public Note process(@PathVariable String id) throws IOException { return notes.process(id); }
 
+    public record SpeakerNameRequest(String name) {}
+    public record MergeSpeakersRequest(String targetSpeaker) {}
+    public record AssignSpeakerRequest(String speaker, String name) {}
+    public record SegmentTextRequest(String text) {}
+
+    @PatchMapping("/{id}/speakers/{speaker}")
+    public Note renameSpeaker(@PathVariable String id, @PathVariable String speaker,
+                             @RequestBody SpeakerNameRequest request) throws IOException {
+        return notes.renameSpeaker(id, speaker, request.name());
+    }
+
+    @PostMapping("/{id}/speakers/{speaker}/merge")
+    public Note mergeSpeakers(@PathVariable String id, @PathVariable String speaker,
+                             @RequestBody MergeSpeakersRequest request) throws IOException {
+        return notes.mergeSpeakers(id, speaker, request.targetSpeaker());
+    }
+
+    @PatchMapping("/{id}/segments/{sequence}/speaker")
+    public Note assignSpeaker(@PathVariable String id, @PathVariable int sequence,
+                             @RequestBody AssignSpeakerRequest request) throws IOException {
+        return notes.assignSpeaker(id, sequence, request.speaker(), request.name());
+    }
+
+    @PatchMapping("/{id}/segments/{sequence}")
+    public Note editSegment(@PathVariable String id, @PathVariable int sequence,
+                            @RequestBody SegmentTextRequest request) throws IOException {
+        return notes.editSegment(id, sequence, request.text());
+    }
+
+    @PostMapping("/{id}/summary")
+    public Note regenerateSummary(@PathVariable String id) throws IOException { return notes.regenerateSummary(id); }
+
     @GetMapping("/{id}/audio")
     public ResponseEntity<byte[]> audio(@PathVariable String id) throws IOException {
         Note note = notes.get(id);

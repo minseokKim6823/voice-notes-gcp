@@ -62,6 +62,7 @@ public class ElasticsearchGateway {
                     "noteId", Map.of("type", "keyword"),
                     "sequence", Map.of("type", "integer"),
                     "speaker", Map.of("type", "keyword"),
+                    "speakerName", Map.of("type", "keyword"),
                     "text", Map.of("type", "text"),
                     "startMs", Map.of("type", "long"),
                     "endMs", Map.of("type", "long")))));
@@ -77,7 +78,7 @@ public class ElasticsearchGateway {
             ndjson.append(json.writeValueAsString(Map.of("index", Map.of("_index", INDEX,
                     "_id", noteId + "-" + segment.sequence())))).append('\n');
             ndjson.append(json.writeValueAsString(Map.of("noteId", noteId,
-                    "sequence", segment.sequence(), "speaker", segment.speaker(), "text", segment.text(),
+                    "sequence", segment.sequence(), "speaker", segment.speaker(), "speakerName", segment.speakerName(), "text", segment.text(),
                     "startMs", segment.startMs(), "endMs", segment.endMs()))).append('\n');
         }
         JsonNode result = request("POST", "/_bulk?refresh=wait_for", ndjson.toString(), "application/x-ndjson", false);
@@ -94,7 +95,8 @@ public class ElasticsearchGateway {
         for (JsonNode hit : result.path("hits").path("hits")) {
             JsonNode source = hit.path("_source");
             segments.add(new TranscriptSegment(source.path("sequence").asInt(), source.path("speaker").asText(),
-                    source.path("text").asText(), source.path("startMs").asLong(), source.path("endMs").asLong()));
+                    source.path("text").asText(), source.path("startMs").asLong(), source.path("endMs").asLong(),
+                    source.path("speakerName").asText("")));
         }
         return segments;
     }

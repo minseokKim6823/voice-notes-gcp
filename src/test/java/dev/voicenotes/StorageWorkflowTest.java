@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -26,6 +27,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -46,6 +49,7 @@ class StorageWorkflowTest {
         properties.add("spring.datasource.url", () -> "jdbc:mariadb://127.0.0.1:53317/voice_notes_test");
         properties.add("spring.datasource.username", () -> "voice_notes_test");
         properties.add("spring.datasource.password", () -> "local-test-only");
+        properties.add("spring.sql.init.mode", () -> "always");
         properties.add("voice-notes.elasticsearch-url", () -> "http://127.0.0.1:9202");
         properties.add("voice-notes.elasticsearch-api-key", () -> "");
     }
@@ -76,6 +80,28 @@ class StorageWorkflowTest {
                     .andExpect(jsonPath("$.status").value("READY"))
                     .andExpect(jsonPath("$.segments[1].speaker").value("2"))
                     .andExpect(jsonPath("$.segments[1].text").value(segments.get(1).text()));
+
+            mvc.perform(patch("/api/notes/{id}/speakers/1", id).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"김민수 👍\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.summaryStale").value(true));
+            assertThat(repository.findById(id).orElseThrow().summaryStale).isTrue();
+            assertThat(elasticsearch.get(id).get(0).speakerName()).isEqualTo("김민수 👍");
+            mvc.perform(patch("/api/notes/{id}/segments/1/speaker", id).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"새 참가자\"}"))
+                    .andExpect(status().isOk());
+            String customId = notes.get(id).segments().get(1).speaker();
+            mvc.perform(post("/api/notes/{id}/speakers/{speaker}/merge", id, customId)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"targetSpeaker\":\"1\"}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.speakers.length()").value(1));
+            mvc.perform(patch("/api/notes/{id}/segments/1", id).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"text\":\"수정검증특수단어 목요일 완료\"}"))
+                    .andExpect(status().isOk());
+            assertThat(notes.search("수정검증특수단어")).extracting(Note::id).contains(id);
+            when(exaone.summarize(anyList())).thenReturn("김민수 👍: 금요일 출시, 목요일 검증 완료.");
+            mvc.perform(post("/api/notes/{id}/summary", id)).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.summaryStale").value(false));
+            assertThat(repository.findById(id).orElseThrow().summaryStale).isFalse();
+            assertThat(notes.get(id).transcript()).contains("김민수 👍: 수정검증특수단어 목요일 완료");
             verify(google, times(1)).transcribe(anyString());
         } finally {
             repository.deleteById(id);
@@ -85,6 +111,35 @@ class StorageWorkflowTest {
                                 "http://127.0.0.1:9202/voice-note-segments/_doc/" + id + "-" + segment.sequence() + "?refresh=true"))
                         .DELETE().build(), HttpResponse.BodyHandlers.discarding());
                 assertThat(result.statusCode()).isIn(200, 404);
+            }
+        }
+    }
+
+    @Test
+    void addsSummaryFlagToLegacySchemaWithoutChangingSavedNotes() throws Exception {
+        String table = "vn_migration_" + java.util.UUID.randomUUID().toString().replace("-", "");
+        String schema;
+        try (var stream = getClass().getResourceAsStream("/db/schema-mariadb.sql")) {
+            schema = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).replace("voice_notes", table);
+        }
+        try (var connection = java.sql.DriverManager.getConnection(
+                "jdbc:mariadb://127.0.0.1:53317/voice_notes_test", "voice_notes_test", "local-test-only");
+             var statement = connection.createStatement()) {
+            try {
+                statement.execute(schema.substring(0, schema.indexOf(';')).replace("    summary_stale BOOLEAN NOT NULL DEFAULT FALSE,", ""));
+                statement.execute("INSERT INTO " + table + " (id,title,file_name,audio_object,content_type,created_at,status,summary) "
+                        + "VALUES ('legacy','기존 노트','a.wav','audio/a.wav','audio/wav',NOW(),'READY','기존 요약')");
+                for (int run = 0; run < 2; run++) {
+                    for (String sql : schema.split(";")) if (!sql.isBlank()) statement.execute(sql);
+                }
+                try (var result = statement.executeQuery("SELECT title,summary,summary_stale FROM " + table + " WHERE id='legacy'")) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getString("title")).isEqualTo("기존 노트");
+                    assertThat(result.getString("summary")).isEqualTo("기존 요약");
+                    assertThat(result.getBoolean("summary_stale")).isFalse();
+                }
+            } finally {
+                statement.execute("DROP TABLE IF EXISTS " + table);
             }
         }
     }

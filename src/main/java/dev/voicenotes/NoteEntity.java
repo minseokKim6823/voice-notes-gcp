@@ -19,6 +19,7 @@ public class NoteEntity {
     @Column(nullable = false) public String status;
     @Column(columnDefinition = "longtext") public String summary;
     @Column(columnDefinition = "text") public String error;
+    @Column(nullable = false) public boolean summaryStale;
 
     protected NoteEntity() {}
 

@@ -11,7 +11,12 @@ Spring Boot 3.5 / Java 17로 서버를 구성하고 Google Cloud, EXAONE, MariaD
 | 브라우저 녹음 | 마이크로 음성을 녹음하고 WebM 파일로 업로드합니다. 마이크 권한과 WebM 녹음을 지원하는 브라우저가 필요하며, localhost 또는 HTTPS에서 사용할 수 있습니다. |
 | 음성 파일 업로드 | WebM, WAV, MP3, FLAC, OGG 형식의 30MB 이하 파일을 받습니다. 제목은 최대 120자이며, 비워 두면 파일 이름을 사용합니다. |
 | 한국어 전사와 화자 구분 | Google Speech-to-Text V2의 Chirp 3 모델로 음성을 한국어 텍스트로 변환하고 화자별 발언을 구분합니다. 화자 라벨은 발언자를 구별하는 표시이며 실제 이름을 식별하지는 않습니다. |
+| 화자 관리 | 화자 이름을 최대 60자로 지정하고, 잘못 나뉜 화자의 전체 발언을 다른 화자로 합칩니다. 이름과 화자 ID를 별도로 저장합니다. |
+| 발언별 화자 수정·분리 | 개별 발언을 기존 화자로 옮기거나 새 화자를 지정해 분리합니다. 전사 문장도 최대 5,000자로 수정할 수 있습니다. 발언 순서와 시간 정보는 유지합니다. |
+| 화자별 보기·내보내기 | 화자별 발언 수와 구간 시간을 표시하고, 선택한 화자의 발언만 필터링합니다. 전체 또는 필터링한 전사를 화자 이름과 함께 UTF-8 텍스트 파일로 저장합니다. |
+| 발언 구간 재생 | 시간 정보가 있는 발언의 시간 버튼을 누르면 원본 음성의 해당 위치부터 재생합니다. 시간 정보가 없는 기존 전사에는 재생 버튼을 비활성화합니다. |
 | AI 요약 | EXAONE에 전사 내용을 보내 화자별 발언, 핵심 내용, 결정 사항, 할 일을 정리하도록 요청합니다. 긴 녹취는 12,000자씩 나누어 요약한 뒤 하나의 요약으로 통합합니다. |
+| 수정 후 요약 재생성 | 화자나 발언을 수정하면 기존 요약에 갱신 안내를 표시합니다. **요약 다시 생성**은 수정된 전사를 사용하며 Google 전사를 다시 호출하지 않습니다. 요약 실패 시 기존 요약과 수정 내용은 유지합니다. |
 | 노트 목록과 상세 조회 | 저장된 노트를 생성일 기준 최신순으로 보여 줍니다. 노트 상세 화면에서 제목, 생성 시간, 처리 상태, AI 요약, 전체 전사를 확인할 수 있습니다. |
 | 원본 음성 재생 | 노트에 저장된 원본 음성을 브라우저 오디오 플레이어로 재생해 전사 내용과 비교할 수 있습니다. |
 | 전사 내용 검색 | 검색어로 Elasticsearch에 저장된 전사 본문을 검색해 관련 노트를 찾습니다. 검색 대상은 전사 내용입니다. |
@@ -24,6 +29,10 @@ Spring Boot 3.5 / Java 17로 서버를 구성하고 Google Cloud, EXAONE, MariaD
 3. **전사 및 요약 시작**을 누르면 음성을 업로드하고 전사와 요약을 순서대로 실행합니다. 완료까지 걸리는 시간은 음성 길이와 외부 API 처리 시간에 따라 달라집니다.
 4. 노트 상세 화면에서 원본 음성, AI 요약, 전체 전사를 확인합니다. 실패한 노트는 오류 내용을 확인한 뒤 **다시 처리하기**를 누릅니다.
 5. 왼쪽 노트 목록에서 이전 기록을 열거나 **전사 내용 검색**에 검색어를 입력해 관련 노트를 찾습니다.
+6. **화자 관리**에서 이름을 저장하거나 합칠 화자를 선택합니다. 각 발언의 **화자 / 발언 편집**에서는 화자 변경, 새 화자로 분리, 문장 수정을 할 수 있습니다.
+7. 수정 후 **요약 다시 생성**을 눌러 요약을 갱신합니다. **화자별 보기**로 필터링한 뒤 **텍스트 저장**을 누르면 선택한 화자의 발언만 저장합니다.
+
+정밀한 발언 시간과 구간 재생이 필요하면 `VOICE_NOTES_SPEECH_WORD_TIME_OFFSETS=true` 또는 YAML의 `voice-notes.speech-word-time-offsets: true`를 설정한 뒤 새 음성을 전사합니다. [Chirp 3 공식 문서](https://docs.cloud.google.com/speech-to-text/docs/models/chirp-3)에 따르면 단어 시간 정보를 켠 배치 전사는 최대 20분 음성을 지원하며 전사 정확도에 영향이 있을 수 있어 기본값은 `false`입니다. 이미 저장된 전사의 시간 정보는 소급 생성하지 않습니다. 시간 표시는 제공된 발언 구간 길이의 합계입니다.
 
 ## 처리 흐름
 
@@ -115,7 +124,13 @@ spring:
     password: DB_PASSWORD
 ```
 
-시작할 때 `src/main/resources/db/schema-mariadb.sql`의 `CREATE TABLE IF NOT EXISTS voice_notes`를 실행하고 Hibernate가 스키마를 검증합니다. 기존 테이블을 삭제하거나 수정하지 않습니다. 앱 계정에는 해당 테이블의 읽기·쓰기 및 최초 생성 권한이 필요합니다. 생성 권한이 없으면 관리자가 SQL을 한 번 실행하고 `spring.sql.init.mode=never`로 설정합니다. 기존 `voice_notes` 테이블이 다른 구조라면 앱 전용 데이터베이스를 지정하세요.
+시작할 때 `src/main/resources/db/schema-mariadb.sql`로 테이블을 준비하고 Hibernate가 스키마를 검증합니다. 이번 버전은 기존 `voice_notes`에 `summary_stale BOOLEAN NOT NULL DEFAULT FALSE` 컬럼을 추가하며 기존 노트는 유지합니다. [MariaDB의 `ADD COLUMN IF NOT EXISTS`](https://mariadb.com/docs/server/reference/sql-statements/data-definition/alter/alter-table)로 반복 실행할 수 있습니다. 앱 계정에는 읽기·쓰기, 최초 생성 및 컬럼 추가를 위한 `ALTER` 권한이 필요합니다. DDL 권한이 없거나 `spring.sql.init.mode=never`를 사용하는 환경은 관리자가 아래 SQL을 한 번 실행하세요. 기존 테이블의 다른 컬럼 구조가 다르면 앱 전용 데이터베이스를 지정하세요.
+
+```sql
+ALTER TABLE voice_notes ADD COLUMN IF NOT EXISTS summary_stale BOOLEAN NOT NULL DEFAULT FALSE;
+```
+
+화자 이름은 Elasticsearch 전사의 `speakerName`에 저장합니다. 해당 필드가 없는 기존 문서도 화자 번호로 정상 조회합니다. 화자 변경·병합·문장 수정은 동일한 전사 문서에 저장되므로 문장 수정은 본문 검색에도 반영됩니다.
 
 기본 Compose는 **Elasticsearch만** 실행합니다. 포트는 `127.0.0.1:9202`, 데이터는 Docker 볼륨에 보관합니다. 인증을 끈 로컬 개발 구성입니다. 기본 텍스트 분석기를 사용하므로 한국어 형태소 검색은 별도 설정이 필요합니다.
 
@@ -161,6 +176,7 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | `ELASTICSEARCH_URL`, `ELASTICSEARCH_API_KEY` | `http://localhost:9202`, 선택적 API 키 |
 | `GOOGLE_CLOUD_PROJECT`, `VOICE_NOTES_BUCKET` | GCP 프로젝트와 버킷 |
 | `VOICE_NOTES_SPEECH_LOCATION`, `VOICE_NOTES_SPEECH_MODEL` | `us`, `chirp_3` |
+| `VOICE_NOTES_SPEECH_WORD_TIME_OFFSETS` | `false`; `true`이면 단어 시간 요청, Chirp 3 배치 음성 최대 20분 |
 | `PORT` | `8080` |
 
 ## API와 검증
@@ -171,6 +187,11 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | `POST /api/notes/{id}/process` | 화자 분리 전사·ES 저장·EXAONE 요약 |
 | `GET /api/notes` | 노트 목록; 전사 본문은 상세 조회에서 반환 |
 | `GET /api/notes/{id}` | 요약·화자별 전사 상세 조회 |
+| `PATCH /api/notes/{id}/speakers/{speaker}` | JSON `name`; 해당 화자의 모든 발언에 이름 적용 |
+| `POST /api/notes/{id}/speakers/{speaker}/merge` | JSON `targetSpeaker`; 원본 화자의 전체 발언을 대상 화자로 병합 |
+| `PATCH /api/notes/{id}/segments/{sequence}/speaker` | JSON `speaker`(기존 ID) 또는 `name`(새 화자) 중 하나; 개별 발언 화자 변경 |
+| `PATCH /api/notes/{id}/segments/{sequence}` | JSON `text`; 발언 내용 수정 |
+| `POST /api/notes/{id}/summary` | 수정한 화자·발언으로 요약 재생성; 전사는 재사용 |
 | `GET /api/notes/search?q=검색어` | 전사 본문 검색 |
 | `GET /api/notes/{id}/audio` | 원본 음성 재생 |
 
@@ -178,7 +199,13 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 .\gradlew.bat test bootJar
 ```
 
-기본 테스트는 화자 응답 파싱과 로컬 HTTP 서버를 통한 EXAONE 프로토콜·오류 처리를 확인합니다. 실제 저장소를 포함한 검증은 별도 임시 MariaDB를 사용합니다.
+기본 테스트는 화자 응답 파싱, 편집·병합·분리 API, 입력 검증, 요약 갱신과 실패 복구, 로컬 HTTP 서버를 통한 ES·EXAONE 프로토콜을 확인합니다. 실제 저장소를 포함한 검증은 별도 임시 MariaDB를 사용하며 기존 스키마에 컬럼을 추가하는 마이그레이션도 확인합니다.
+
+Node.js 22 이상과 Chrome이 있으면 실제 브라우저에서 화자 편집, 필터, UTF-8 파일 내보내기, 구간 재생, 요약 재생성, 저장 실패 복구, 저장 중 노트 이동, 모바일 레이아웃을 검사할 수 있습니다. 외부 API와 DB를 사용하지 않으며 임시 프로필과 스크린샷은 `build/ui-test`에 생성합니다. Windows의 기본 Chrome 설치 경로를 사용하며 다른 경로는 `VOICE_NOTES_CHROME` 환경 변수로 지정합니다.
+
+```powershell
+node scripts/test-ui.cjs
+```
 
 ```powershell
 docker compose up -d elasticsearch

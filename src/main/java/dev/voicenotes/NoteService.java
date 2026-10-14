@@ -72,17 +72,32 @@ public class NoteService {
 
     public synchronized Note process(String id) throws IOException {
         NoteEntity note = entity(id);
-        if ("READY".equals(note.status)) return view(note);
+        if ("READY".equals(note.status) && !note.summaryStale) return view(note);
+        return summarize(note, false);
+    }
+
+    public synchronized Note regenerateSummary(String id) throws IOException {
+        NoteEntity note = entity(id);
+        requireEditable(note);
+        return summarize(note, true);
+    }
+
+    private Note summarize(NoteEntity note, boolean summaryOnly) throws IOException {
+        List<TranscriptSegment> segments = summaryOnly ? elasticsearch.get(note.id) : null;
+        if (summaryOnly && segments.isEmpty()) throw new IllegalStateException("전사 완료 후 요약을 생성할 수 있습니다.");
         note.status = "PROCESSING";
         note.error = "";
+        if (summaryOnly) note.summaryStale = true;
         repository.save(note);
         try {
-            List<TranscriptSegment> segments = elasticsearch.get(id);
+            if (segments == null) segments = elasticsearch.get(note.id);
             if (segments.isEmpty()) {
                 segments = google.transcribe(note.audioObject);
-                elasticsearch.save(id, segments);
+                if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
+                elasticsearch.save(note.id, segments);
             }
             note.summary = exaone.summarize(segments);
+            note.summaryStale = false;
             note.status = "READY";
             repository.save(note);
             return Note.from(note, segments);
@@ -92,6 +107,88 @@ public class NoteService {
             repository.save(note);
             throw e;
         }
+    }
+
+    public synchronized Note renameSpeaker(String id, String speakerId, String name) throws IOException {
+        String cleanName = speakerName(name);
+        NoteEntity note = entity(id);
+        requireEditable(note);
+        List<TranscriptSegment> segments = elasticsearch.get(id);
+        requireSpeaker(segments, speakerId);
+        return saveSpeakers(note, segments, segments.stream().map(segment -> segment.speaker().equals(speakerId)
+                ? segment.withSpeaker(speakerId, cleanName) : segment).toList());
+    }
+
+    public synchronized Note mergeSpeakers(String id, String speakerId, String targetId) throws IOException {
+        NoteEntity note = entity(id);
+        requireEditable(note);
+        List<TranscriptSegment> segments = elasticsearch.get(id);
+        requireSpeaker(segments, speakerId);
+        TranscriptSegment target = requireSpeaker(segments, targetId);
+        if (speakerId.equals(targetId)) throw new IllegalArgumentException("서로 다른 화자를 선택하세요.");
+        return saveSpeakers(note, segments, segments.stream().map(segment -> segment.speaker().equals(speakerId)
+                ? segment.withSpeaker(targetId, target.speakerName()) : segment).toList());
+    }
+
+    public synchronized Note assignSpeaker(String id, int sequence, String speakerId, String name) throws IOException {
+        // A new name creates a separate speaker for this utterance; an ID moves it to an existing speaker.
+        boolean existing = speakerId != null && !speakerId.isBlank();
+        boolean create = name != null && !name.isBlank();
+        if (existing == create) throw new IllegalArgumentException("기존 화자 또는 새 화자 이름 중 하나를 입력하세요.");
+        String cleanName = create ? speakerName(name) : "";
+        NoteEntity note = entity(id);
+        requireEditable(note);
+        List<TranscriptSegment> segments = elasticsearch.get(id);
+        if (segments.stream().noneMatch(segment -> segment.sequence() == sequence)) {
+            throw new IllegalArgumentException("발언 구간을 찾을 수 없습니다.");
+        }
+        TranscriptSegment target = existing ? requireSpeaker(segments, speakerId) : null;
+        String targetId = existing ? target.speaker() : "custom-" + UUID.randomUUID();
+        String targetName = existing ? target.speakerName() : cleanName;
+        return saveSpeakers(note, segments, segments.stream().map(segment -> segment.sequence() == sequence
+                ? segment.withSpeaker(targetId, targetName) : segment).toList());
+    }
+
+    public synchronized Note editSegment(String id, int sequence, String text) throws IOException {
+        if (text == null || text.isBlank() || text.strip().length() > 5000) {
+            throw new IllegalArgumentException("발언 내용은 1자 이상 5,000자 이하로 입력하세요.");
+        }
+        NoteEntity note = entity(id);
+        requireEditable(note);
+        List<TranscriptSegment> segments = elasticsearch.get(id);
+        if (segments.stream().noneMatch(segment -> segment.sequence() == sequence)) {
+            throw new IllegalArgumentException("발언 구간을 찾을 수 없습니다.");
+        }
+        return saveSpeakers(note, segments, segments.stream().map(segment -> segment.sequence() == sequence
+                ? new TranscriptSegment(segment.sequence(), segment.speaker(), text.strip(), segment.startMs(),
+                segment.endMs(), segment.speakerName()) : segment).toList());
+    }
+
+    private static void requireEditable(NoteEntity note) {
+        if ("PROCESSING".equals(note.status)) throw new IllegalStateException("처리 중에는 화자를 편집할 수 없습니다.");
+    }
+
+    private static TranscriptSegment requireSpeaker(List<TranscriptSegment> segments, String speakerId) {
+        return segments.stream().filter(segment -> segment.speaker().equals(speakerId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("화자를 찾을 수 없습니다."));
+    }
+
+    private static String speakerName(String name) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("화자 이름을 입력하세요.");
+        String clean = name.strip();
+        if (clean.length() > 60 || clean.codePoints().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("화자 이름은 줄바꿈 없이 60자 이하로 입력하세요.");
+        }
+        return clean;
+    }
+
+    private Note saveSpeakers(NoteEntity note, List<TranscriptSegment> before, List<TranscriptSegment> after) throws IOException {
+        if (before.equals(after)) return Note.from(note, before);
+        // Invalidate before the bulk write: a partial upstream failure must never leave an apparently current summary.
+        note.summaryStale = true;
+        repository.save(note);
+        elasticsearch.save(note.id, after);
+        return Note.from(note, after);
     }
 
     public byte[] audio(String id) throws IOException { return google.get(entity(id).audioObject); }

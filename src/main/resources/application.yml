@@ -32,6 +32,7 @@ voice-notes:
   bucket: ${VOICE_NOTES_BUCKET:}
   speech-location: ${VOICE_NOTES_SPEECH_LOCATION:us}
   speech-model: ${VOICE_NOTES_SPEECH_MODEL:chirp_3}
+  speech-word-time-offsets: ${VOICE_NOTES_SPEECH_WORD_TIME_OFFSETS:false}
   elasticsearch-url: ${ELASTICSEARCH_URL:http://localhost:9202}
   elasticsearch-api-key: ${ELASTICSEARCH_API_KEY:}
   exaone:

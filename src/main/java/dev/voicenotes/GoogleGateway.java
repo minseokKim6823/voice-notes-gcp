@@ -26,18 +26,21 @@ public class GoogleGateway {
     private final String bucket;
     private final String speechLocation;
     private final String speechModel;
+    private final boolean wordTimeOffsets;
     private GoogleCredentials credentials;
 
     public GoogleGateway(ObjectMapper json,
             @Value("${voice-notes.project-id}") String project,
             @Value("${voice-notes.bucket}") String bucket,
             @Value("${voice-notes.speech-location}") String speechLocation,
-            @Value("${voice-notes.speech-model}") String speechModel) {
+            @Value("${voice-notes.speech-model}") String speechModel,
+            @Value("${voice-notes.speech-word-time-offsets:false}") boolean wordTimeOffsets) {
         this.json = json;
         this.project = project;
         this.bucket = bucket;
         this.speechLocation = speechLocation;
         this.speechModel = speechModel;
+        this.wordTimeOffsets = wordTimeOffsets;
     }
 
     public String bucket() { return bucket; }
@@ -101,8 +104,7 @@ public class GoogleGateway {
         String recognizer = "projects/" + project + "/locations/" + speechLocation + "/recognizers/_";
         String speechBase = "https://" + speechLocation + "-speech.googleapis.com/v2/";
         JsonNode operation = jsonCall("POST", speechBase + recognizer + ":batchRecognize",
-                Map.of("config", Map.of("autoDecodingConfig", Map.of(), "languageCodes", List.of("ko-KR"),
-                                "model", speechModel, "features", Map.of("diarizationConfig", Map.of(), "enableAutomaticPunctuation", true)),
+                Map.of("config", recognitionConfig(),
                         "files", List.of(Map.of("uri", uri)), "recognitionOutputConfig", Map.of("inlineResponseConfig", Map.of())));
         String name = operation.path("name").asText();
         if (name.isBlank()) throw new IOException("전사 작업 ID가 없습니다.");
@@ -116,6 +118,12 @@ public class GoogleGateway {
             catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IOException("전사 대기가 중단되었습니다.", e); }
         }
         throw new IOException("전사가 15분 안에 끝나지 않았습니다. 다시 처리할 수 있습니다.");
+    }
+
+    Map<String, Object> recognitionConfig() {
+        return Map.of("autoDecodingConfig", Map.of(), "languageCodes", List.of("ko-KR"),
+                "model", speechModel, "features", Map.of("diarizationConfig", Map.of(),
+                "enableAutomaticPunctuation", true, "enableWordTimeOffsets", wordTimeOffsets));
     }
 
     static List<TranscriptSegment> parseBatchFileResult(JsonNode fileResult) throws IOException {
@@ -145,26 +153,38 @@ public class GoogleGateway {
             StringBuilder line = new StringBuilder();
             long start = 0;
             long end = 0;
+            int firstSequence = segments.size();
             for (JsonNode word : words) {
-                String nextSpeaker = word.path("speakerLabel").asText("미확인");
+                String token = word.path("word").asText().trim();
+                if (token.isBlank()) continue;
+                String nextSpeaker = word.path("speakerLabel").asText("미확인").trim();
                 if (nextSpeaker.isBlank()) nextSpeaker = "미확인";
-                if (speaker != null && !speaker.equals(nextSpeaker) && !line.isEmpty()) {
+                long wordStart = millis(word.path("startOffset").asText());
+                if (speaker != null && !line.isEmpty()
+                        && (!speaker.equals(nextSpeaker) || (end > 0 && wordStart - end >= 1500))) {
                     segments.add(new TranscriptSegment(segments.size(), speaker, line.toString().trim(), start, end));
                     line.setLength(0);
                 }
-                if (line.isEmpty()) start = millis(word.path("startOffset").asText());
+                if (line.isEmpty()) start = wordStart;
                 speaker = nextSpeaker;
-                line.append(word.path("word").asText()).append(' ');
+                line.append(token).append(' ');
                 end = millis(word.path("endOffset").asText());
             }
             if (!line.isEmpty()) segments.add(new TranscriptSegment(segments.size(), speaker, line.toString().trim(), start, end));
+            if (segments.size() == firstSequence) {
+                String text = top.path("transcript").asText().trim();
+                if (!text.isBlank()) segments.add(new TranscriptSegment(segments.size(), "미확인", text, 0, 0));
+            }
         }
         return segments;
     }
 
     private static long millis(String duration) {
         if (!duration.endsWith("s")) return 0;
-        try { return Math.round(Double.parseDouble(duration.substring(0, duration.length() - 1)) * 1000); }
+        try {
+            double seconds = Double.parseDouble(duration.substring(0, duration.length() - 1));
+            return Double.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : 0;
+        }
         catch (NumberFormatException e) { return 0; }
     }
 }
