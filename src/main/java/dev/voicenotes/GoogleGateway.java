@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntConsumer;
 
 @Component
 public class GoogleGateway {
@@ -100,6 +101,11 @@ public class GoogleGateway {
     }
 
     public List<TranscriptSegment> transcribe(String objectName) throws IOException {
+        return transcribe(objectName, percent -> {});
+    }
+
+    public List<TranscriptSegment> transcribe(String objectName, IntConsumer progress) throws IOException {
+        progress.accept(0);
         String uri = "gs://" + bucket + "/" + objectName;
         String recognizer = "projects/" + project + "/locations/" + speechLocation + "/recognizers/_";
         String speechBase = "https://" + speechLocation + "-speech.googleapis.com/v2/";
@@ -110,9 +116,12 @@ public class GoogleGateway {
         if (name.isBlank()) throw new IOException("전사 작업 ID가 없습니다.");
         for (int i = 0; i < 180; i++) {
             JsonNode state = jsonCall("GET", speechBase + name, null);
+            progress.accept(operationProgress(state));
             if (state.path("done").asBoolean()) {
                 if (state.has("error")) throw new IOException("전사 실패: " + state.path("error").path("message").asText());
-                return parseBatchFileResult(state.path("response").path("results").path(uri));
+                List<TranscriptSegment> segments = parseBatchFileResult(state.path("response").path("results").path(uri));
+                progress.accept(100);
+                return segments;
             }
             try { Thread.sleep(5000); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IOException("전사 대기가 중단되었습니다.", e); }
@@ -124,6 +133,10 @@ public class GoogleGateway {
         return Map.of("autoDecodingConfig", Map.of(), "languageCodes", List.of("ko-KR"),
                 "model", speechModel, "features", Map.of("diarizationConfig", Map.of(),
                 "enableAutomaticPunctuation", true, "enableWordTimeOffsets", wordTimeOffsets));
+    }
+
+    static int operationProgress(JsonNode operation) {
+        return Math.max(0, Math.min(100, operation.path("metadata").path("progressPercent").asInt()));
     }
 
     static List<TranscriptSegment> parseBatchFileResult(JsonNode fileResult) throws IOException {

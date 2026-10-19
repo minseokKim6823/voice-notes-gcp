@@ -28,6 +28,13 @@ let holdNext = false;
 let releaseEdit = null;
 let holdNextRead = false;
 let releaseRead = null;
+let slowSummary = false;
+let releaseSummary = null;
+let progressReads = 0;
+let failProgressReads = 0;
+let holdUpload = false;
+let releaseUpload = null;
+let failUpload = false;
 
 function view(note) {
   const speakers = new Map();
@@ -38,7 +45,9 @@ function view(note) {
     speaker.durationMs += Math.max(0, segment.endMs - segment.startMs);
     speakers.set(speaker.id, speaker);
   }
-  return {...note, speakers:[...speakers.values()], transcript:note.segments.map((s) => `${speakers.get(s.speaker).name}: ${s.text}`).join('\n')};
+  return {...note, progressPercent:note.status === 'READY' ? 100 : note.progressPercent || 0,
+    processingStage:note.status === 'READY' ? 'COMPLETE' : note.processingStage || 'PREPARING',
+    speakers:[...speakers.values()], transcript:note.segments.map((s) => `${speakers.get(s.speaker).name}: ${s.text}`).join('\n')};
 }
 
 const wav = Buffer.alloc(44 + 8000 * 2 * 5);
@@ -58,11 +67,28 @@ const server = http.createServer(async (req, res) => {
       if (!mime) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, {'Content-Type':`${mime};charset=utf-8`}); res.end(fs.readFileSync(file)); return;
     }
-    if (pathname === '/api/notes') { send(200, [...notes.values()].map(view)); return; }
+    if (pathname === '/api/notes') {
+      if (req.method === 'GET') { send(200, [...notes.values()].map(view)); return; }
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      assert.match(Buffer.concat(chunks).toString(), /progress-upload.wav/);
+      if (failUpload) { failUpload = false; send(502, {error:'테스트 업로드 오류'}); return; }
+      if (holdUpload) { holdUpload = false; await new Promise((resolve) => { releaseUpload = resolve; }); releaseUpload = null; }
+      const uploaded = {id:'33333333-3333-4333-8333-333333333333',title:'업로드 진행률 테스트',fileName:'progress-upload.wav',
+        createdAt:'2026-10-19T01:00:00Z',status:'UPLOADED',summary:'',error:'',summaryStale:false,segments:[]};
+      notes.set(uploaded.id, uploaded);
+      send(200, view(uploaded)); return;
+    }
     const parts = pathname.split('/').map(decodeURIComponent);
     const note = notes.get(parts[3]);
     if (!note) { send(404, {error:'노트를 찾을 수 없습니다.'}); return; }
     if (parts[4] === 'audio') { res.writeHead(200, {'Content-Type':'audio/wav','Accept-Ranges':'bytes'}); res.end(wav); return; }
+    if (parts[4] === 'progress') {
+      progressReads++;
+      if (failProgressReads > 0) { failProgressReads--; send(503, {error:'temporary disconnect'}); return; }
+      const {id,status,progressPercent,processingStage,error} = view(note);
+      send(200, {id,status,progressPercent,processingStage,error}); return;
+    }
     if (req.method === 'GET') {
       if (holdNextRead) { holdNextRead = false; await new Promise((resolve) => { releaseRead = resolve; }); releaseRead = null; }
       send(200, view(note)); return;
@@ -74,7 +100,10 @@ const server = http.createServer(async (req, res) => {
     requests.push({method:req.method,pathname,body});
     if (failNext) {
       failNext = false;
-      if (parts[4] === 'summary') { note.status = 'FAILED'; note.error = '테스트 저장 오류'; note.summaryStale = true; }
+      if (parts[4] === 'summary') {
+        note.status = 'FAILED'; note.error = '테스트 저장 오류'; note.summaryStale = true;
+        note.progressPercent = 87; note.processingStage = 'FAILED';
+      }
       send(502, {error:'테스트 저장 오류'}); return;
     }
     if (holdNext) { holdNext = false; await new Promise((resolve) => { releaseEdit = resolve; }); releaseEdit = null; }
@@ -90,10 +119,19 @@ const server = http.createServer(async (req, res) => {
         else { const target = note.segments.find((s) => s.speaker === body.speaker); segment.speaker = target.speaker; segment.speakerName = target.speakerName; }
       } else segment.text = body.text.trim();
     } else if (parts[4] === 'summary') {
+      if (slowSummary) {
+        slowSummary = false;
+        note.status = 'PROCESSING'; note.progressPercent = 80; note.processingStage = 'SUMMARIZING';
+        await new Promise((resolve) => { releaseSummary = resolve; }); releaseSummary = null;
+      }
       note.summary = `수정 요약: ${view(note).speakers.map((s) => s.name).join(', ')}`;
       note.summaryStale = false;
       note.status = 'READY';
       note.error = '';
+      send(200, view(note)); return;
+    } else if (parts[4] === 'process') {
+      note.segments = [{sequence:0,speaker:'1',speakerName:'',text:'업로드한 음성 전사',startMs:0,endMs:1000}];
+      note.summary = '업로드한 음성 요약'; note.status = 'READY';
       send(200, view(note)); return;
     } else { send(404, {error:'잘못된 테스트 요청'}); return; }
     note.summaryStale = true;
@@ -241,9 +279,71 @@ async function main() {
     await waitUI(() => document.getElementById('note-status').textContent === '처리 실패' && !document.getElementById('summary-button').disabled, 'summary failure recovery');
     assert.equal(await evaluate(() => document.getElementById('retry-button').hidden), false);
     assert.equal(await evaluate(() => document.getElementById('retry-button').disabled), false);
+    assert.equal(await evaluate(() => document.getElementById('processing-progress').value < 100), true);
     await evaluate(() => document.getElementById('summary-button').click());
     await waitUI(() => document.getElementById('note-status').textContent === '완료' && !document.getElementById('summary-button').disabled, 'summary retry');
     console.log('PASS: failed summary restores controls and can be regenerated');
+
+    slowSummary = true;
+    await evaluate(() => document.getElementById('summary-button').click());
+    await until(() => releaseSummary !== null, 'summary processing started');
+    await waitUI(() => document.getElementById('processing-progress').value === 80, 'live summary progress');
+    assert.match(await evaluate(() => document.getElementById('processing-progress-label').textContent), /요약/);
+    notes.get(id).progressPercent = 92;
+    await waitUI(() => document.getElementById('processing-progress').value === 92, 'updated server progress');
+    failProgressReads = 1;
+    await waitUI(() => !document.getElementById('progress-connection').hidden, 'connection retry notice');
+    await waitUI(() => document.getElementById('progress-connection').hidden, 'polling recovery');
+    console.log('PASS: live progress updates and recovery from a temporary connection error');
+
+    await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), otherId);
+    await waitUI(() => document.getElementById('note-title').textContent === '다른 노트', 'switch during processing');
+    await delay(150);
+    const readsAfterSwitch = progressReads;
+    await delay(1300);
+    assert.equal(progressReads, readsAfterSwitch);
+    assert.equal(await evaluate(() => document.getElementById('processing-progress').value), 100);
+    await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), id);
+    await waitUI(() => document.getElementById('processing-progress').value === 92, 'reopen running note');
+    console.log('PASS: progress polling stops on navigation and resumes for the running note');
+
+    await cdp('Page.reload');
+    await waitUI(() => document.querySelectorAll('.list-item').length === 2 && currentId === null, 'reload while processing');
+    await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), id);
+    await waitUI(() => document.getElementById('processing-progress').value === 92, 'restore progress after reload');
+    releaseSummary();
+    await waitUI(() => document.getElementById('note-status').textContent === '완료' && document.getElementById('processing-progress').value === 100, 'complete after page reload');
+    assert.equal(await evaluate(() => document.getElementById('summary-button').disabled), false);
+    console.log('PASS: processing progress resumes after reload and reaches 100 only on completion');
+
+    holdUpload = true;
+    await evaluate(() => {
+      document.getElementById('new-note').click();
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array(1024 * 1024)], 'progress-upload.wav', {type:'audio/wav'}));
+      const input = document.getElementById('audio-file');
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change'));
+      document.getElementById('submit-button').click();
+    });
+    await until(() => releaseUpload !== null, 'upload waiting for server-side audio save');
+    await waitUI(() => !document.getElementById('upload-progress-panel').hidden, 'upload progress visible');
+    await waitUI(() => document.getElementById('upload-progress-label').textContent.includes('저장'), 'uploaded bytes waiting for storage');
+    assert.equal(await evaluate(() => document.getElementById('upload-progress').hasAttribute('value')), false);
+    assert.equal(await evaluate(() => document.getElementById('submit-button').disabled), true);
+    releaseUpload();
+    await waitUI(() => document.getElementById('note-title').textContent === '업로드 진행률 테스트' && document.getElementById('note-status').textContent === '완료', 'upload and processing completion');
+    assert.equal(await evaluate(() => document.getElementById('upload-progress-panel').hidden), true);
+    assert.equal(await evaluate(() => document.getElementById('processing-progress').value), 100);
+    console.log('PASS: upload byte progress waits for audio storage before processing');
+
+    failUpload = true;
+    await evaluate(() => { document.getElementById('new-note').click(); document.getElementById('submit-button').click(); });
+    await waitUI(() => document.getElementById('message').textContent === '테스트 업로드 오류' && !document.getElementById('submit-button').disabled, 'upload failure recovery');
+    assert.equal(await evaluate(() => document.getElementById('upload-progress-panel').hidden), true);
+    console.log('PASS: failed upload hides progress and restores retry controls');
+    await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), id);
+    await waitUI(() => document.getElementById('note-title').textContent === '화자 기능 테스트', 'return to completed note');
 
     await cdp('Page.captureScreenshot', {format:'png',captureBeyondViewport:true}).then((result) => fs.writeFileSync(path.join(output, 'desktop.png'), Buffer.from(result.data, 'base64')));
     await cdp('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:true});
@@ -252,10 +352,12 @@ async function main() {
     assert.deepEqual(exceptions, []);
     console.log('PASS: mobile layout and no uncaught browser exceptions');
     await cdp('Browser.close').catch(() => {});
-    console.log('UI tests passed (11 workflows). Screenshots: build/ui-test/desktop.png, mobile.png');
+    console.log('UI tests passed (16 workflows). Screenshots: build/ui-test/desktop.png, mobile.png');
   } finally {
     if (releaseEdit) releaseEdit();
     if (releaseRead) releaseRead();
+    if (releaseSummary) releaseSummary();
+    if (releaseUpload) releaseUpload();
     if (socket) socket.close();
     chrome.kill();
     await new Promise((resolve) => server.close(resolve));

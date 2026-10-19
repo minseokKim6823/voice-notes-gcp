@@ -57,7 +57,7 @@ async function editNote(note, path, method, body, success) {
     }
   } catch (error) {
     message(error.message, true);
-    // Fetch again because a failed bulk request can have saved some of the edits.
+    // Reload the last stored state after a failed save.
     if (currentId === note.id && selectionVersion === version) {
       try {
         const refreshed = await api(`/api/notes/${note.id}`);

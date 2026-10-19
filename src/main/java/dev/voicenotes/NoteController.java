@@ -26,6 +26,11 @@ public class NoteController {
     @GetMapping("/{id}")
     public Note get(@PathVariable String id) throws IOException { return notes.get(id); }
 
+    @GetMapping("/{id}/progress")
+    public ResponseEntity<NoteProgress> progress(@PathVariable String id) {
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(notes.progress(id));
+    }
+
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Note create(@RequestParam(required = false) String title, @RequestParam MultipartFile file) throws IOException {
         return notes.create(title, file);

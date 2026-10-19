@@ -1,19 +1,15 @@
 services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.3
-    environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
+  mongodb:
+    image: mongo:8.0
     ports:
-      - "127.0.0.1:9202:9200"
+      - "127.0.0.1:27017:27017"
     volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
+      - mongodb_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ping: 1}).ok"]
       interval: 10s
       timeout: 5s
       retries: 30
 
 volumes:
-  elasticsearch_data:
+  mongodb_data:

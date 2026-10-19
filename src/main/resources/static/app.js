@@ -22,6 +22,7 @@ function message(text, error = false) {
 }
 
 function showComposer() {
+  stopProgressWatch();
   selectionVersion++;
   currentId = null;
   currentNote = null;
@@ -50,6 +51,7 @@ function display(note) {
   $('note-status').textContent = {UPLOADED:'업로드 완료',PROCESSING:'처리 중',READY:'완료',FAILED:'처리 실패'}[note.status] || note.status;
   $('note-status').className = `badge ${note.status.toLowerCase()}`;
   $('note-summary').textContent = note.summary || '요약이 아직 없습니다.';
+  watchProgress(note);
   displaySpeakers(note);
   $('note-error').hidden = !note.error;
   $('note-error').textContent = note.error || '';
@@ -85,7 +87,7 @@ async function processNote(id, action = 'process') {
   if (processingIds.has(id) || editingIds.has(id)) return;
   processingIds.add(id);
   if (currentId === id) {
-    display({...currentNote, status:'PROCESSING'});
+    display({...currentNote, status:'PROCESSING', progressPercent:0, processingStage:'PREPARING'});
     $('retry-button').hidden = true;
     $('note-status').textContent = '처리 중';
     $('note-status').className = 'badge processing';
@@ -157,7 +159,7 @@ $('submit-button').onclick = async () => {
   $('submit-button').disabled = true;
   message('업로드 중입니다…');
   try {
-    const note = await api('/api/notes', {method:'POST', body});
+    const note = await uploadNote(body);
     await loadNotes();
     display({...note, status:'PROCESSING'});
     message('음성을 전사하고 요약하는 중입니다. 길이에 따라 몇 분 걸릴 수 있습니다.');

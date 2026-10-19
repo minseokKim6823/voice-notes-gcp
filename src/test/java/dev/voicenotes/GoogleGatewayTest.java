@@ -10,6 +10,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class GoogleGatewayTest {
+    @org.junit.jupiter.api.Test
+    void readsOperationProgressAndClampsInvalidUpstreamValues() throws Exception {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        org.assertj.core.api.Assertions.assertThat(GoogleGateway.operationProgress(json.readTree("{\"metadata\":{\"progressPercent\":37}}"))).isEqualTo(37);
+        org.assertj.core.api.Assertions.assertThat(GoogleGateway.operationProgress(json.readTree("{\"metadata\":{\"progressPercent\":999}}"))).isEqualTo(100);
+        org.assertj.core.api.Assertions.assertThat(GoogleGateway.operationProgress(json.readTree("{}"))).isZero();
+    }
+
     @Test
     void requestsDiarizationAndOptionalWordTimestamps() {
         var precise = new GoogleGateway(new ObjectMapper(), "test-project", "test-bucket", "us", "chirp_3", true);

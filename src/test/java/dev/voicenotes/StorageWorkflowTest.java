@@ -13,15 +13,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -32,14 +29,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Explicit opt-in: compose.test.yaml MariaDB + local compose.yaml Elasticsearch. */
+/** Explicit opt-in: isolated MariaDB and MongoDB in compose.test.yaml. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @EnabledIfEnvironmentVariable(named = "RUN_STORAGE_TESTS", matches = "true")
 class StorageWorkflowTest {
     @Autowired NoteService notes;
     @Autowired NoteRepository repository;
-    @Autowired ElasticsearchGateway elasticsearch;
+    @Autowired MongoTranscriptStore transcripts;
+    @Autowired org.springframework.data.mongodb.core.MongoTemplate mongo;
     @Autowired MockMvc mvc;
     @MockitoBean GoogleGateway google;
     @MockitoBean ExaoneSummarizer exaone;
@@ -50,8 +48,7 @@ class StorageWorkflowTest {
         properties.add("spring.datasource.username", () -> "voice_notes_test");
         properties.add("spring.datasource.password", () -> "local-test-only");
         properties.add("spring.sql.init.mode", () -> "always");
-        properties.add("voice-notes.elasticsearch-url", () -> "http://127.0.0.1:9202");
-        properties.add("voice-notes.elasticsearch-api-key", () -> "");
+        properties.add("spring.data.mongodb.uri", () -> "mongodb://127.0.0.1:53318/voice_notes_test?serverSelectionTimeoutMS=5000");
     }
 
     @Test
@@ -59,8 +56,8 @@ class StorageWorkflowTest {
         List<TranscriptSegment> segments = List.of(
                 new TranscriptSegment(0, "1", "다음 주 금요일에 출시합니다.", 0, 1500),
                 new TranscriptSegment(1, "2", "테스트를 목요일까지 완료하겠습니다. 👍", 1600, 3000));
-        when(google.transcribe(anyString())).thenReturn(segments);
-        when(exaone.summarize(anyList())).thenThrow(new IOException("temporary summary failure"))
+        when(google.transcribe(anyString(), any())).thenReturn(segments);
+        when(exaone.summarize(anyList(), any())).thenThrow(new IOException("temporary summary failure"))
                 .thenReturn("금요일 출시, 목요일 테스트 완료. 👍");
 
         Note uploaded = notes.create("마리아DB 통합 테스트", new MockMultipartFile(
@@ -70,7 +67,7 @@ class StorageWorkflowTest {
             assertThat(repository.findById(id).orElseThrow().status).isEqualTo("UPLOADED");
             assertThatThrownBy(() -> notes.process(id)).isInstanceOf(IOException.class);
             assertThat(repository.findById(id).orElseThrow().status).isEqualTo("FAILED");
-            assertThat(elasticsearch.get(id)).containsExactlyElementsOf(segments);
+            assertThat(transcripts.get(id)).containsExactlyElementsOf(segments);
 
             Note completed = notes.process(id);
             assertThat(completed.status()).isEqualTo("READY");
@@ -85,7 +82,7 @@ class StorageWorkflowTest {
                             .content("{\"name\":\"김민수 👍\"}"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.summaryStale").value(true));
             assertThat(repository.findById(id).orElseThrow().summaryStale).isTrue();
-            assertThat(elasticsearch.get(id).get(0).speakerName()).isEqualTo("김민수 👍");
+            assertThat(transcripts.get(id).get(0).speakerName()).isEqualTo("김민수 👍");
             mvc.perform(patch("/api/notes/{id}/segments/1/speaker", id).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"name\":\"새 참가자\"}"))
                     .andExpect(status().isOk());
@@ -97,21 +94,16 @@ class StorageWorkflowTest {
                             .content("{\"text\":\"수정검증특수단어 목요일 완료\"}"))
                     .andExpect(status().isOk());
             assertThat(notes.search("수정검증특수단어")).extracting(Note::id).contains(id);
-            when(exaone.summarize(anyList())).thenReturn("김민수 👍: 금요일 출시, 목요일 검증 완료.");
+            when(exaone.summarize(anyList(), any())).thenReturn("김민수 👍: 금요일 출시, 목요일 검증 완료.");
             mvc.perform(post("/api/notes/{id}/summary", id)).andExpect(status().isOk())
                     .andExpect(jsonPath("$.summaryStale").value(false));
             assertThat(repository.findById(id).orElseThrow().summaryStale).isFalse();
             assertThat(notes.get(id).transcript()).contains("김민수 👍: 수정검증특수단어 목요일 완료");
-            verify(google, times(1)).transcribe(anyString());
+            verify(google, times(1)).transcribe(anyString(), any());
         } finally {
             repository.deleteById(id);
-            HttpClient http = HttpClient.newHttpClient();
-            for (TranscriptSegment segment : segments) {
-                HttpResponse<Void> result = http.send(HttpRequest.newBuilder(URI.create(
-                                "http://127.0.0.1:9202/voice-note-segments/_doc/" + id + "-" + segment.sequence() + "?refresh=true"))
-                        .DELETE().build(), HttpResponse.BodyHandlers.discarding());
-                assertThat(result.statusCode()).isIn(200, 404);
-            }
+            mongo.remove(org.springframework.data.mongodb.core.query.Query.query(
+                    org.springframework.data.mongodb.core.query.Criteria.where("_id").is(id)), MongoTranscriptStore.COLLECTION);
         }
     }
 
@@ -126,17 +118,22 @@ class StorageWorkflowTest {
                 "jdbc:mariadb://127.0.0.1:53317/voice_notes_test", "voice_notes_test", "local-test-only");
              var statement = connection.createStatement()) {
             try {
-                statement.execute(schema.substring(0, schema.indexOf(';')).replace("    summary_stale BOOLEAN NOT NULL DEFAULT FALSE,", ""));
+                statement.execute(schema.substring(0, schema.indexOf(';'))
+                        .replace("    summary_stale BOOLEAN NOT NULL DEFAULT FALSE,", "")
+                        .replace("    progress_percent INT NOT NULL DEFAULT 0,", "")
+                        .replace("    processing_stage VARCHAR(255) NOT NULL DEFAULT 'UPLOADED',", ""));
                 statement.execute("INSERT INTO " + table + " (id,title,file_name,audio_object,content_type,created_at,status,summary) "
                         + "VALUES ('legacy','기존 노트','a.wav','audio/a.wav','audio/wav',NOW(),'READY','기존 요약')");
                 for (int run = 0; run < 2; run++) {
                     for (String sql : schema.split(";")) if (!sql.isBlank()) statement.execute(sql);
                 }
-                try (var result = statement.executeQuery("SELECT title,summary,summary_stale FROM " + table + " WHERE id='legacy'")) {
+                try (var result = statement.executeQuery("SELECT title,summary,summary_stale,progress_percent,processing_stage FROM " + table + " WHERE id='legacy'")) {
                     assertThat(result.next()).isTrue();
                     assertThat(result.getString("title")).isEqualTo("기존 노트");
                     assertThat(result.getString("summary")).isEqualTo("기존 요약");
                     assertThat(result.getBoolean("summary_stale")).isFalse();
+                    assertThat(result.getInt("progress_percent")).isZero();
+                    assertThat(result.getString("processing_stage")).isEqualTo("UPLOADED");
                 }
             } finally {
                 statement.execute("DROP TABLE IF EXISTS " + table);

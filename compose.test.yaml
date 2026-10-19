@@ -1,4 +1,4 @@
-# Isolated database for integration checks; never connects to the user's MariaDB.
+# Isolated databases for integration checks; never connects to the user's databases.
 name: voice-notes-validation
 services:
   mariadb:
@@ -14,6 +14,17 @@ services:
       - /var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  mongodb:
+    image: mongo:8.0
+    ports:
+      - "127.0.0.1:53318:27017"
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ping: 1}).ok"]
       interval: 5s
       timeout: 3s
       retries: 20

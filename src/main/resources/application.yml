@@ -10,6 +10,9 @@ spring:
     username: ${DATABASE_USER:}
     password: ${DATABASE_PASSWORD:}
     driver-class-name: org.mariadb.jdbc.Driver
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/voice_notes?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000}
   sql:
     init:
       mode: ${DATABASE_INIT_MODE:always}
@@ -33,8 +36,6 @@ voice-notes:
   speech-location: ${VOICE_NOTES_SPEECH_LOCATION:us}
   speech-model: ${VOICE_NOTES_SPEECH_MODEL:chirp_3}
   speech-word-time-offsets: ${VOICE_NOTES_SPEECH_WORD_TIME_OFFSETS:false}
-  elasticsearch-url: ${ELASTICSEARCH_URL:http://localhost:9202}
-  elasticsearch-api-key: ${ELASTICSEARCH_API_KEY:}
   exaone:
     base-url: ${EXAONE_BASE_URL:}
     api-key: ${EXAONE_API_KEY:}

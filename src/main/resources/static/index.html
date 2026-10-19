@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/style.css">
   <link rel="stylesheet" href="/search.css">
   <link rel="stylesheet" href="/speakers.css">
+  <link rel="stylesheet" href="/progress.css">
 </head>
 <body>
   <div class="shell">
@@ -19,7 +20,7 @@
       <div class="sidebar-foot">Google Cloud 기반 음성 기록</div>
     </aside>
     <main>
-      <header><span>모든 음성을, 다시 찾을 수 있는 기록으로</span><span class="header-tag">Google Speech · EXAONE · Elasticsearch</span></header>
+      <header><span>모든 음성을, 다시 찾을 수 있는 기록으로</span><span class="header-tag">Google Speech · EXAONE · MongoDB</span></header>
       <section id="empty-view" class="empty-view">
         <div class="eyebrow">VOICE NOTES</div>
         <h1>녹음이 끝나면<br><em>정리가 시작됩니다.</em></h1>
@@ -34,12 +35,21 @@
           </div>
           <div id="selected-file" class="selected-file">webm · wav · mp3 · flac · ogg / 최대 30MB</div>
           <button id="submit-button" class="submit-button" disabled>전사 및 요약 시작 →</button>
+          <div id="upload-progress-panel" class="progress-panel" hidden>
+            <div class="progress-heading"><span id="upload-progress-label" role="status">음성 업로드 중</span><span id="upload-progress-percent"></span></div>
+            <progress id="upload-progress" max="100" value="0" aria-labelledby="upload-progress-label"></progress>
+          </div>
         </div>
       </section>
       <section id="note-view" class="note-view" hidden>
         <div class="note-top"><button id="back-button" class="text-button">← 전체 노트</button><span id="note-date"></span></div>
         <h1 id="note-title"></h1>
         <div class="status-row"><span id="note-status" class="badge"></span><span id="note-file"></span></div>
+        <div id="processing-progress-panel" class="progress-panel" hidden>
+          <div class="progress-heading"><span id="processing-progress-label" role="status"></span><span id="processing-progress-percent"></span></div>
+          <progress id="processing-progress" max="100" value="0" aria-labelledby="processing-progress-label"></progress>
+          <p id="progress-connection" class="progress-help" role="status" hidden>진행 상태 연결을 다시 시도하고 있습니다.</p>
+        </div>
         <audio id="note-audio" controls preload="none"></audio>
         <div id="note-error" class="error-box" hidden></div>
         <button id="retry-button" class="retry-button" hidden>다시 처리하기</button>
@@ -66,6 +76,7 @@
     </main>
   </div>
   <script src="/speakers.js" defer></script>
+  <script src="/progress.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

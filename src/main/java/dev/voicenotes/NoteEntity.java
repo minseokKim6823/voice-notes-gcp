@@ -20,6 +20,8 @@ public class NoteEntity {
     @Column(columnDefinition = "longtext") public String summary;
     @Column(columnDefinition = "text") public String error;
     @Column(nullable = false) public boolean summaryStale;
+    @Column(nullable = false) public int progressPercent;
+    @Column(nullable = false) public String processingStage = "UPLOADED";
 
     protected NoteEntity() {}
 

@@ -24,10 +24,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SpeakerWorkflowTest {
     private final String id = UUID.randomUUID().toString();
     private final GoogleGateway google = mock(GoogleGateway.class);
-    private final ElasticsearchGateway elasticsearch = mock(ElasticsearchGateway.class);
+    private final MongoTranscriptStore transcripts = mock(MongoTranscriptStore.class);
     private final ExaoneSummarizer exaone = mock(ExaoneSummarizer.class);
     private final NoteRepository repository = mock(NoteRepository.class);
-    private final NoteService notes = new NoteService(google, elasticsearch, exaone, repository);
+    private final NoteService notes = new NoteService(google, transcripts, exaone, repository);
     private final AtomicReference<List<TranscriptSegment>> stored = new AtomicReference<>();
     private NoteEntity entity;
     private MockMvc mvc;
@@ -42,9 +42,9 @@ class SpeakerWorkflowTest {
                 new TranscriptSegment(2, "1", "감사합니다.", 3500, 4000)));
         when(repository.findById(id)).thenReturn(Optional.of(entity));
         when(repository.save(any(NoteEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(elasticsearch.get(id)).thenAnswer(invocation -> stored.get());
+        when(transcripts.get(id)).thenAnswer(invocation -> stored.get());
         doAnswer(invocation -> { stored.set(List.copyOf(invocation.getArgument(1))); return null; })
-                .when(elasticsearch).save(eq(id), anyList());
+                .when(transcripts).save(eq(id), anyList());
         mvc = MockMvcBuilders.standaloneSetup(new NoteController(notes)).build();
     }
 
@@ -103,18 +103,18 @@ class SpeakerWorkflowTest {
                         .content("{\"text\":\"  목요일까지 검증합니다.  \"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.summaryStale").value(true));
         assertThat(notes.get(id).segments().get(1)).isEqualTo(new TranscriptSegment(1, "2", "목요일까지 검증합니다.", 1600, 3000));
-        verify(elasticsearch).save(eq(id), argThat(segments -> segments.get(1).text().equals("목요일까지 검증합니다.")));
+        verify(transcripts).save(eq(id), argThat(segments -> segments.get(1).text().equals("목요일까지 검증합니다.")));
     }
 
     @Test
     void summaryRegenerationUsesEditedNamesAndNeverRepeatsSpeechRecognition() throws Exception {
         notes.renameSpeaker(id, "1", "민수");
-        when(exaone.summarize(anyList())).thenReturn("민수가 일정을 정했습니다.");
+        when(exaone.summarize(anyList(), any())).thenReturn("민수가 일정을 정했습니다.");
         mvc.perform(post("/api/notes/{id}/summary", id)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("READY"))
                 .andExpect(jsonPath("$.summaryStale").value(false))
                 .andExpect(jsonPath("$.summary").value("민수가 일정을 정했습니다."));
-        verify(exaone).summarize(argThat(segments -> "민수".equals(segments.get(0).displayName())));
+        verify(exaone).summarize(argThat(segments -> "민수".equals(segments.get(0).displayName())), any());
         verifyNoInteractions(google);
         assertThat(entity.summaryStale).isFalse();
     }
@@ -122,9 +122,9 @@ class SpeakerWorkflowTest {
     @Test
     void processingStaleReadyNoteAlsoRegeneratesSummary() throws Exception {
         notes.renameSpeaker(id, "1", "민수");
-        when(exaone.summarize(anyList())).thenReturn("새 요약");
+        when(exaone.summarize(anyList(), any())).thenReturn("새 요약");
         assertThat(notes.process(id).summaryStale()).isFalse();
-        verify(exaone).summarize(anyList());
+        verify(exaone).summarize(anyList(), any());
         verifyNoInteractions(google);
     }
 
@@ -134,7 +134,7 @@ class SpeakerWorkflowTest {
         notes.editSegment(id, 0, "금요일 출시입니다.");
         notes.process(id);
         assertThat(entity.summaryStale).isFalse();
-        verify(elasticsearch, never()).save(anyString(), anyList());
+        verify(transcripts, never()).save(anyString(), anyList());
         verify(repository, never()).save(any());
         verifyNoInteractions(exaone, google);
     }
@@ -142,21 +142,21 @@ class SpeakerWorkflowTest {
     @Test
     void failedSummaryKeepsExistingSummaryAndCorrectionsForRetry() throws Exception {
         notes.renameSpeaker(id, "1", "민수");
-        when(exaone.summarize(anyList())).thenThrow(new IOException("요약 API 실패"));
+        when(exaone.summarize(anyList(), any())).thenThrow(new IOException("요약 API 실패"));
         mvc.perform(post("/api/notes/{id}/summary", id)).andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.error").value("요약 API 실패"));
         assertThat(notes.get(id).status()).isEqualTo("FAILED");
         assertThat(notes.get(id).summary()).isEqualTo("화자 1이 일정을 정했습니다.");
         assertThat(notes.get(id).summaryStale()).isTrue();
-        doReturn("민수의 새 요약").when(exaone).summarize(anyList());
+        doReturn("민수의 새 요약").when(exaone).summarize(anyList(), any());
         assertThat(notes.process(id).status()).isEqualTo("READY");
         assertThat(notes.get(id).summaryStale()).isFalse();
         verifyNoInteractions(google);
     }
 
     @Test
-    void failedBulkWriteStillMarksThePreviousSummaryStale() throws Exception {
-        doThrow(new IOException("bulk failure")).when(elasticsearch).save(eq(id), anyList());
+    void failedTranscriptWriteStillMarksThePreviousSummaryStale() throws Exception {
+        doThrow(new IOException("storage failure")).when(transcripts).save(eq(id), anyList());
         assertThatThrownBy(() -> notes.renameSpeaker(id, "1", "민수")).isInstanceOf(IOException.class);
         assertThat(entity.summaryStale).isTrue();
         verify(repository).save(entity);
@@ -169,7 +169,7 @@ class SpeakerWorkflowTest {
                             .content(new ObjectMapper().writeValueAsString(new NoteController.SpeakerNameRequest(name))))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").isString());
         }
-        verify(elasticsearch, never()).save(anyString(), anyList());
+        verify(transcripts, never()).save(anyString(), anyList());
         assertThat(entity.summaryStale).isFalse();
     }
 

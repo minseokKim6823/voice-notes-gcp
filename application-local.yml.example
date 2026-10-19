@@ -5,11 +5,13 @@ spring:
     url: jdbc:mariadb://localhost:3306/voice_notes
     username: YOUR_DB_USER
     password: ""
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/voice_notes?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000
 
 voice-notes:
   project-id: ""
   bucket: ""
-  elasticsearch-url: http://localhost:9202
   exaone:
     # Chat Completions API base URL, including /v1 (or your provider's equivalent prefix).
     base-url: ""

@@ -14,14 +14,14 @@ public class NoteService {
     private static final Set<String> TYPES = Set.of("audio/webm", "audio/wav", "audio/x-wav",
             "audio/mpeg", "audio/mp3", "audio/flac", "audio/ogg");
     private final GoogleGateway google;
-    private final ElasticsearchGateway elasticsearch;
+    private final MongoTranscriptStore transcripts;
     private final ExaoneSummarizer exaone;
     private final NoteRepository repository;
 
-    public NoteService(GoogleGateway google, ElasticsearchGateway elasticsearch,
+    public NoteService(GoogleGateway google, MongoTranscriptStore transcripts,
             ExaoneSummarizer exaone, NoteRepository repository) {
         this.google = google;
-        this.elasticsearch = elasticsearch;
+        this.transcripts = transcripts;
         this.exaone = exaone;
         this.repository = repository;
     }
@@ -32,7 +32,7 @@ public class NoteService {
     }
 
     private Note view(NoteEntity entity) throws IOException {
-        return Note.from(entity, elasticsearch.get(entity.id));
+        return Note.from(entity, transcripts.get(entity.id));
     }
 
     public Note create(String title, MultipartFile file) throws IOException {
@@ -53,6 +53,8 @@ public class NoteService {
 
     public Note get(String id) throws IOException { return view(entity(id)); }
 
+    public NoteProgress progress(String id) { return NoteProgress.from(entity(id)); }
+
     public List<Note> list() {
         List<Note> notes = new ArrayList<>();
         for (NoteEntity entity : repository.findAllByOrderByCreatedAtDesc()) {
@@ -64,7 +66,7 @@ public class NoteService {
     public List<Note> search(String query) throws IOException {
         if (query == null || query.isBlank()) return list();
         List<Note> notes = new ArrayList<>();
-        for (String id : elasticsearch.searchNoteIds(query.trim())) {
+        for (String id : transcripts.searchNoteIds(query.trim())) {
             repository.findById(id).ifPresent(entity -> notes.add(Note.from(entity, List.of())));
         }
         return notes;
@@ -83,37 +85,55 @@ public class NoteService {
     }
 
     private Note summarize(NoteEntity note, boolean summaryOnly) throws IOException {
-        List<TranscriptSegment> segments = summaryOnly ? elasticsearch.get(note.id) : null;
+        List<TranscriptSegment> segments = summaryOnly ? transcripts.get(note.id) : null;
         if (summaryOnly && segments.isEmpty()) throw new IllegalStateException("전사 완료 후 요약을 생성할 수 있습니다.");
         note.status = "PROCESSING";
         note.error = "";
+        note.progressPercent = 0;
+        note.processingStage = "PREPARING";
         if (summaryOnly) note.summaryStale = true;
         repository.save(note);
         try {
-            if (segments == null) segments = elasticsearch.get(note.id);
+            if (segments == null) segments = transcripts.get(note.id);
             if (segments.isEmpty()) {
-                segments = google.transcribe(note.audioObject);
+                updateProgress(note, "TRANSCRIBING", 5);
+                segments = google.transcribe(note.audioObject, percent -> updateProgress(note, "TRANSCRIBING", 5 + percent * 70 / 100));
                 if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
-                elasticsearch.save(note.id, segments);
+                updateProgress(note, "SAVING_TRANSCRIPT", 78);
+                transcripts.save(note.id, segments);
             }
-            note.summary = exaone.summarize(segments);
+            updateProgress(note, "SUMMARIZING", 80);
+            note.summary = exaone.summarize(segments, percent -> updateProgress(note, "SUMMARIZING", 80 + percent * 15 / 100));
+            updateProgress(note, "SAVING_NOTE", 98);
             note.summaryStale = false;
             note.status = "READY";
+            note.processingStage = "COMPLETE";
+            note.progressPercent = 100;
             repository.save(note);
             return Note.from(note, segments);
         } catch (IOException | RuntimeException e) {
             note.status = "FAILED";
+            note.processingStage = "FAILED";
+            note.progressPercent = Math.min(note.progressPercent, 99);
             note.error = e.getMessage();
             repository.save(note);
             throw e;
         }
     }
 
+    private void updateProgress(NoteEntity note, String stage, int percent) {
+        int next = Math.max(note.progressPercent, Math.max(0, Math.min(99, percent)));
+        if (stage.equals(note.processingStage) && next == note.progressPercent) return;
+        note.processingStage = stage;
+        note.progressPercent = next;
+        repository.save(note);
+    }
+
     public synchronized Note renameSpeaker(String id, String speakerId, String name) throws IOException {
         String cleanName = speakerName(name);
         NoteEntity note = entity(id);
         requireEditable(note);
-        List<TranscriptSegment> segments = elasticsearch.get(id);
+        List<TranscriptSegment> segments = transcripts.get(id);
         requireSpeaker(segments, speakerId);
         return saveSpeakers(note, segments, segments.stream().map(segment -> segment.speaker().equals(speakerId)
                 ? segment.withSpeaker(speakerId, cleanName) : segment).toList());
@@ -122,7 +142,7 @@ public class NoteService {
     public synchronized Note mergeSpeakers(String id, String speakerId, String targetId) throws IOException {
         NoteEntity note = entity(id);
         requireEditable(note);
-        List<TranscriptSegment> segments = elasticsearch.get(id);
+        List<TranscriptSegment> segments = transcripts.get(id);
         requireSpeaker(segments, speakerId);
         TranscriptSegment target = requireSpeaker(segments, targetId);
         if (speakerId.equals(targetId)) throw new IllegalArgumentException("서로 다른 화자를 선택하세요.");
@@ -138,7 +158,7 @@ public class NoteService {
         String cleanName = create ? speakerName(name) : "";
         NoteEntity note = entity(id);
         requireEditable(note);
-        List<TranscriptSegment> segments = elasticsearch.get(id);
+        List<TranscriptSegment> segments = transcripts.get(id);
         if (segments.stream().noneMatch(segment -> segment.sequence() == sequence)) {
             throw new IllegalArgumentException("발언 구간을 찾을 수 없습니다.");
         }
@@ -155,7 +175,7 @@ public class NoteService {
         }
         NoteEntity note = entity(id);
         requireEditable(note);
-        List<TranscriptSegment> segments = elasticsearch.get(id);
+        List<TranscriptSegment> segments = transcripts.get(id);
         if (segments.stream().noneMatch(segment -> segment.sequence() == sequence)) {
             throw new IllegalArgumentException("발언 구간을 찾을 수 없습니다.");
         }
@@ -184,10 +204,10 @@ public class NoteService {
 
     private Note saveSpeakers(NoteEntity note, List<TranscriptSegment> before, List<TranscriptSegment> after) throws IOException {
         if (before.equals(after)) return Note.from(note, before);
-        // Invalidate before the bulk write: a partial upstream failure must never leave an apparently current summary.
+        // Mark the summary stale before saving so storage failures cannot make it appear current.
         note.summaryStale = true;
         repository.save(note);
-        elasticsearch.save(note.id, after);
+        transcripts.save(note.id, after);
         return Note.from(note, after);
     }
 
