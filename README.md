@@ -104,15 +104,15 @@ flowchart LR
 Java 17, Docker, 접속 가능한 MariaDB를 준비합니다. MariaDB 서버·데이터베이스·계정은 기존 것을 사용하며 이 프로젝트에서 만들지 않습니다.
 
 ```powershell
-if (-not (Test-Path application-local.yml)) { Copy-Item application-local.yml.example application-local.yml }
-# application-local.yml의 DB, GCP, EXAONE 값을 입력합니다.
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# .env의 DB, GCP, EXAONE 값을 입력합니다.
 docker compose up -d mongodb
 .\gradlew.bat bootRun
 ```
 
 `http://localhost:8080`에서 녹음하거나 음성을 업로드합니다. 녹음은 localhost 또는 HTTPS에서 마이크 권한을 허용해야 동작합니다. WebM, WAV, MP3, FLAC, OGG 형식의 30MB 이하 파일을 받습니다.
 
-`application-local.yml`은 프로젝트 루트에서 실행할 때 자동 로드되며 Git·GCP 업로드 제외 목록에 포함됩니다. 배포에서는 이 파일 없이 환경 변수로 설정할 수 있습니다. 로컬 파일에 직접 지정한 값은 `application.yml`의 환경 변수 기본 설정보다 우선하므로, 둘 중 한 방식을 사용하세요.
+`.env`는 프로젝트 루트에서 실행할 때 Spring Boot가 자동으로 읽으며 Git·GCP 업로드 제외 목록에 포함됩니다. 배포에서는 이 파일 없이 환경 변수로 설정할 수 있습니다. 민감한 값은 `.env`에 두고 커밋하지 마세요.
 
 ## EXAONE API 연결
 
@@ -138,7 +138,7 @@ $headers = @{ Authorization = "Bearer $env:EXAONE_API_KEY" }
 (Invoke-RestMethod -Uri "$base/models" -Headers $headers).data.id
 ```
 
-API 키는 환경 변수로 입력하거나 `application-local.yml`에 직접 넣고, 터미널 출력이나 채팅에 붙여넣지 마세요. 키가 필요 없는 자체 서버라면 위 조회 명령에서 `-Headers $headers`를 빼면 됩니다. 자체 서버를 운영한다면 [LG AI Research의 K-EXAONE 2.0 서빙 안내](https://github.com/LG-AI-EXAONE/K-EXAONE-2.0#serving-k-exaone-20)에 따라 vLLM/SGLang을 띄우고 서버 주소의 `/v1`을 사용합니다. 공식 750B 모델 서빙 예시는 H200 GPU 16개를 사용하므로, 서버가 없다면 먼저 제공업체나 별도 추론 환경이 필요합니다.
+API 키는 `.env`의 `EXAONE_API_KEY`에 넣고 터미널 출력이나 채팅에 붙여넣지 마세요. 키가 필요 없는 자체 서버라면 위 조회 명령에서 `-Headers $headers`를 빼면 됩니다. 자체 서버를 운영한다면 [LG AI Research의 K-EXAONE 2.0 서빙 안내](https://github.com/LG-AI-EXAONE/K-EXAONE-2.0#serving-k-exaone-20)에 따라 vLLM/SGLang을 띄우고 서버 주소의 `/v1`을 사용합니다. 공식 750B 모델 서빙 예시는 H200 GPU 16개를 사용하므로, 서버가 없다면 먼저 제공업체나 별도 추론 환경이 필요합니다.
 
 - 요청: `POST {base-url}/chat/completions`, JSON `model`, `messages`, `stream: false`, `max_tokens`, `temperature`, `top_p`.
 - 인증: 키가 있으면 `Authorization: Bearer ...`.
@@ -191,7 +191,7 @@ gcloud auth application-default login
 gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 ```
 
-다른 프로젝트나 저장 위치를 원하면 스크립트의 `-ProjectId`, `-BucketName`, `-Location` 인자로 지정하고 `application-local.yml`의 프로젝트·버킷 이름도 같은 값으로 바꾸세요. [Cloud Storage 버킷 생성 문서](https://docs.cloud.google.com/storage/docs/creating-buckets)를 참고하세요.
+다른 프로젝트나 저장 위치를 원하면 스크립트의 `-ProjectId`, `-BucketName`, `-Location` 인자로 지정하고 `.env`의 `GOOGLE_CLOUD_PROJECT`, `VOICE_NOTES_BUCKET` 값도 같은 값으로 바꾸세요. [Cloud Storage 버킷 생성 문서](https://docs.cloud.google.com/storage/docs/creating-buckets)를 참고하세요.
 
 ```yaml
 voice-notes:

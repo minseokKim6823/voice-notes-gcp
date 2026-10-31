@@ -43,4 +43,4 @@ if ($bucket.location -ine $Location) {
 
 $bucket | Select-Object name, location, storageClass | Format-Table -AutoSize
 
-Write-Output "application-local.yml에 voice-notes.project-id=$ProjectId 및 voice-notes.bucket=$BucketName 값을 사용하세요."
+Write-Output ".env에 GOOGLE_CLOUD_PROJECT=$ProjectId 및 VOICE_NOTES_BUCKET=$BucketName 값을 사용하세요."
