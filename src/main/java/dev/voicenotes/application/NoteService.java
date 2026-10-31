@@ -1,4 +1,9 @@
-package dev.voicenotes;
+package dev.voicenotes.application;
+
+import dev.voicenotes.api.*;
+import dev.voicenotes.domain.*;
+import dev.voicenotes.persistence.*;
+import dev.voicenotes.infrastructure.*;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -76,6 +81,46 @@ public class NoteService {
         NoteEntity note = entity(id);
         if ("READY".equals(note.status) && !note.summaryStale) return view(note);
         return summarize(note, false);
+    }
+
+    public synchronized Note transcribeOnly(String id) throws IOException {
+        NoteEntity note = entity(id);
+        requireEditable(note);
+        List<TranscriptSegment> segments = transcripts.get(id);
+        if (!segments.isEmpty()) {
+            note.status = "TRANSCRIBED";
+            note.processingStage = "TRANSCRIPTION_COMPLETE";
+            note.progressPercent = 100;
+            note.error = "";
+            repository.save(note);
+            return Note.from(note, segments);
+        }
+
+        note.status = "PROCESSING";
+        note.error = "";
+        note.progressPercent = 0;
+        note.processingStage = "PREPARING";
+        repository.save(note);
+        try {
+            updateProgress(note, "TRANSCRIBING", 5);
+            segments = google.transcribe(note.audioObject, percent -> updateProgress(note,
+                    "TRANSCRIBING", 5 + percent * 70 / 100));
+            if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
+            updateProgress(note, "SAVING_TRANSCRIPT", 78);
+            transcripts.save(note.id, segments);
+            note.status = "TRANSCRIBED";
+            note.processingStage = "TRANSCRIPTION_COMPLETE";
+            note.progressPercent = 100;
+            repository.save(note);
+            return Note.from(note, segments);
+        } catch (IOException | RuntimeException e) {
+            note.status = "FAILED";
+            note.processingStage = "FAILED";
+            note.progressPercent = Math.min(note.progressPercent, 99);
+            note.error = e.getMessage();
+            repository.save(note);
+            throw e;
+        }
     }
 
     public synchronized Note regenerateSummary(String id) throws IOException {

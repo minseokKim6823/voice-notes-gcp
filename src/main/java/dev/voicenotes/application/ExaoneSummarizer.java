@@ -1,4 +1,9 @@
-package dev.voicenotes;
+package dev.voicenotes.application;
+
+import dev.voicenotes.api.*;
+import dev.voicenotes.domain.*;
+import dev.voicenotes.persistence.*;
+import dev.voicenotes.infrastructure.*;
 
 import org.springframework.stereotype.Component;
 

@@ -229,6 +229,7 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | --- | --- |
 | `POST /api/notes` | multipart `file`, 선택적 `title`; GCS 업로드·MariaDB 저장 |
 | `POST /api/notes/{id}/process` | 화자 분리 전사·MongoDB 저장·EXAONE 요약 |
+| `POST /api/notes/{id}/transcribe` | Google Speech-to-Text 전사만 실행·MongoDB 저장; EXAONE 미호출 |
 | `GET /api/notes/{id}/progress` | `id`, `status`, `progressPercent`, `processingStage`, `error`; 전사 본문 조회 없이 진행 상태 반환 |
 | `GET /api/notes` | 노트 목록; 전사 본문은 상세 조회에서 반환 |
 | `GET /api/notes/{id}` | 요약·화자별 전사 상세 조회 |
