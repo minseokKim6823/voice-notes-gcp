@@ -2,17 +2,17 @@ let progressWatch = null;
 const progressLabels = {
   UPLOADED:'업로드 완료', PREPARING:'처리 준비 중', TRANSCRIBING:'음성을 전사하고 있습니다',
   SAVING_TRANSCRIPT:'전사를 저장하고 있습니다', SUMMARIZING:'AI 요약을 만들고 있습니다',
-  SAVING_NOTE:'요약을 저장하고 있습니다', COMPLETE:'전사와 요약이 완료되었습니다', FAILED:'처리가 중단되었습니다'
+  SAVING_NOTE:'요약을 저장하고 있습니다', COMPLETE:'전사와 요약이 완료되었습니다', TRANSCRIPTION_COMPLETE:'전사가 완료되었습니다', FAILED:'처리가 중단되었습니다'
 };
 
 function renderProgress(note) {
   const panel = $('processing-progress-panel');
   panel.hidden = note.status === 'UPLOADED';
   panel.classList.toggle('failed', note.status === 'FAILED');
-  const percent = note.status === 'READY' ? 100 : Math.max(0, Math.min(99, note.progressPercent || 0));
+  const percent = ['READY','TRANSCRIBED'].includes(note.status) ? 100 : Math.max(0, Math.min(99, note.progressPercent || 0));
   $('processing-progress').value = percent;
   $('processing-progress-percent').textContent = `${percent}%`;
-  const stage = note.status === 'READY' ? 'COMPLETE' : note.status === 'FAILED' ? 'FAILED' : note.processingStage;
+  const stage = note.status === 'READY' ? 'COMPLETE' : note.status === 'TRANSCRIBED' ? 'TRANSCRIPTION_COMPLETE' : note.status === 'FAILED' ? 'FAILED' : note.processingStage;
   $('processing-progress-label').textContent = progressLabels[stage] || progressLabels.PREPARING;
 }
 
@@ -44,7 +44,7 @@ function watchProgress(note) {
         watch.seenProcessing = true;
         currentNote = {...currentNote, ...progress};
         renderProgress(currentNote);
-      } else if (['READY','FAILED'].includes(progress.status) && (watch.seenProcessing || !processingIds.has(watch.id))) {
+      } else if (['READY','TRANSCRIBED','FAILED'].includes(progress.status) && (watch.seenProcessing || !processingIds.has(watch.id))) {
         // A poll can beat the POST that starts a rerun; ignore the previous result until the job starts.
         const completed = await api(`/api/notes/${watch.id}`, {signal:watch.controller.signal, cache:'no-store'});
         if (progressWatch === watch && currentId === watch.id) { display(completed); await loadNotes(); }
