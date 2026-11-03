@@ -28,6 +28,23 @@ class WhisperWorkflowTest {
             new SpeechTranscriber(google, whisper, "whisper", "chirp_3", analytics), analytics);
 
     @Test
+    void transcriptionOnlyUsesTheSelectedWhisperProviderAndNeverCallsTheLlm() throws Exception {
+        var entity = new NoteEntity(java.util.UUID.randomUUID().toString(), "녹음", "a.webm", "audio/a.webm", "audio/webm");
+        when(repository.findById(entity.id)).thenReturn(Optional.of(entity));
+        when(transcripts.get(entity.id)).thenReturn(List.of());
+        when(google.get(entity.audioObject)).thenReturn(new byte[]{1});
+        var segments = List.of(new TranscriptSegment(0, "미확인", "검토하겠습니다.", 10, 1000));
+        when(whisper.transcribe(any(), eq("audio/webm"))).thenReturn(segments);
+        var result = notes.transcribeOnly(entity.id);
+        assertThat(result.status()).isEqualTo("TRANSCRIBED");
+        assertThat(result.progressPercent()).isEqualTo(100);
+        assertThat(result.segments()).containsExactlyElementsOf(segments);
+        verify(transcripts).save(entity.id, segments);
+        verifyNoInteractions(exaone);
+        verify(google, never()).transcribe(anyString(), any());
+    }
+
+    @Test
     void processesRecordedAudioThroughWhisperAndReusesSavedTranscriptOnSummaryRetry() throws Exception {
         when(repository.save(any())).thenAnswer(call -> call.getArgument(0));
         byte[] audio = {1, 2, 3};

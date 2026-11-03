@@ -7,6 +7,8 @@ import dev.voicenotes.infrastructure.*;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -51,7 +53,7 @@ public class NoteController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "음성 노트 업로드", description = "음성 파일과 선택적 제목으로 노트를 생성합니다. 지원 형식은 WebM, WAV, MP3, FLAC, OGG이며 최대 30MB입니다.")
+    @Operation(summary = "음성 노트 업로드", description = "음성 파일과 선택적 제목으로 노트를 생성합니다. WebM, WAV, MP3, FLAC, OGG, M4A/MP4를 지원하며 최대 24MB입니다.")
     public Note create(@RequestParam(required = false) String title, @RequestParam MultipartFile file) throws IOException {
         return notes.create(title, file);
     }
@@ -61,7 +63,7 @@ public class NoteController {
     public Note process(@PathVariable String id) throws IOException { return notes.process(id); }
 
     @PostMapping("/{id}/transcribe")
-    @Operation(summary = "음성 전사만 실행", description = "Google Speech-to-Text로 음성을 전사해 저장하고 결과를 반환합니다. AI 요약 API는 호출하지 않습니다.")
+    @Operation(summary = "음성 전사만 실행", description = "선택한 전사 엔진으로 음성을 전사해 저장합니다. AI 요약 API는 호출하지 않습니다.")
     public Note transcribe(@PathVariable String id) throws IOException { return notes.transcribeOnly(id); }
 
     public record SpeakerNameRequest(String name) {}
@@ -103,11 +105,11 @@ public class NoteController {
 
     @GetMapping("/{id}/audio")
     @Operation(summary = "원본 음성 재생", description = "업로드된 원본 음성을 브라우저에서 재생할 수 있도록 반환합니다.")
-    public ResponseEntity<byte[]> audio(@PathVariable String id) throws IOException {
+    public ResponseEntity<Resource> audio(@PathVariable String id) throws IOException {
         Note note = notes.get(id);
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(note.contentType()))
                 .header("Content-Disposition", "inline; filename=recording")
-                .body(notes.audio(id));
+                .body(new ByteArrayResource(notes.audio(id)));
     }
 
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
