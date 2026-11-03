@@ -40,7 +40,7 @@ async function openNote(id) {
 }
 
 function display(note) {
-  if (currentId !== note.id) speakerFilter = '';
+  if (currentId !== note.id) { speakerFilter = ''; workspaceNoteId = null; }
   currentId = note.id;
   currentNote = note;
   $('empty-view').hidden = true;
@@ -48,14 +48,15 @@ function display(note) {
   $('note-title').textContent = note.title;
   $('note-date').textContent = new Date(note.createdAt).toLocaleString('ko-KR');
   $('note-file').textContent = note.fileName;
-  $('note-status').textContent = {UPLOADED:'업로드 완료',PROCESSING:'처리 중',READY:'완료',FAILED:'처리 실패'}[note.status] || note.status;
+  $('note-status').textContent = {UPLOADED:'저장 완료',PROCESSING:'처리 중',TRANSCRIBED:'전사 완료',READY:'완료',FAILED:'처리 실패'}[note.status] || note.status;
   $('note-status').className = `badge ${note.status.toLowerCase()}`;
-  $('note-summary').textContent = note.summary || '요약이 아직 없습니다.';
+  renderSummary(note.summary);
+  displayWorkspace(note);
   watchProgress(note);
   displaySpeakers(note);
   $('note-error').hidden = !note.error;
   $('note-error').textContent = note.error || '';
-  $('retry-button').hidden = note.status === 'READY' || note.status === 'PROCESSING' || processingIds.has(note.id);
+  $('retry-button').hidden = ['READY','TRANSCRIBED','PROCESSING'].includes(note.status) || processingIds.has(note.id);
   $('retry-button').disabled = editingIds.has(note.id);
   const audioPath = `/api/notes/${note.id}/audio`;
   if ($('note-audio').getAttribute('src') !== audioPath) $('note-audio').src = audioPath;
@@ -75,7 +76,7 @@ async function loadNotes() {
       const title = document.createElement('strong');
       title.textContent = note.title;
       const date = document.createElement('small');
-      date.textContent = `${new Date(note.createdAt).toLocaleDateString('ko-KR')} · ${{UPLOADED:'업로드 완료',PROCESSING:'처리 중',READY:'완료',FAILED:'실패'}[note.status] || note.status}`;
+      date.textContent = `${new Date(note.createdAt).toLocaleDateString('ko-KR')} · ${{UPLOADED:'저장 완료',PROCESSING:'처리 중',TRANSCRIBED:'전사 완료',READY:'완료',FAILED:'실패'}[note.status] || note.status}`;
       button.append(title, date);
       button.onclick = () => openNote(note.id);
       list.append(button);
@@ -95,7 +96,10 @@ async function processNote(id, action = 'process') {
   }
   try {
     const note = await api(`/api/notes/${id}/${action}`, {method:'POST'});
-    if (currentId === id) display(note);
+    if (currentId === id) {
+      display(note);
+      message(note.status === 'TRANSCRIBED' ? '전사를 완료했습니다. 필요할 때 요약을 생성할 수 있습니다.' : '전사와 요약을 완료했습니다.');
+    }
   } catch (error) {
     message(error.message, true);
     if (currentId === id) {
@@ -117,6 +121,8 @@ async function processNote(id, action = 'process') {
 $('audio-file').onchange = (event) => {
   if (uploadBusy || recordingState !== 'idle') return;
   clearRecordingPreview();
+  recordingBookmarks = [];
+  renderRecordingBookmarks();
   selectedFile = event.target.files[0] || null;
   $('selected-file').textContent = selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1_000_000).toFixed(1)}MB` : '';
   $('submit-button').disabled = !selectedFile;
@@ -129,6 +135,8 @@ async function submitNote() {
     return;
   }
   const body = new FormData();
+  const action = $('with-summary').checked ? 'process' : 'transcribe';
+  const bookmarks = [...recordingBookmarks];
   body.append('title', $('title').value);
   body.append('file', selectedFile);
   uploadBusy = true;
@@ -136,10 +144,11 @@ async function submitNote() {
   message('음성을 저장하고 있습니다…');
   try {
     const note = await uploadNote(body);
+    await queueRecordingBookmarks(note.id, bookmarks);
     await loadNotes();
     display({...note, status:'PROCESSING'});
-    message('음성을 전사하고 요약하는 중입니다. 길이에 따라 몇 분 걸릴 수 있습니다.');
-    await processNote(note.id);
+    message(action === 'transcribe' ? '음성을 전사하고 있습니다.' : '음성을 전사하고 요약하는 중입니다.');
+    await processNote(note.id, action);
   } catch (error) { message(error.message, true); }
   finally { uploadBusy = false; updateRecordingControls(); }
 }
@@ -150,6 +159,7 @@ $('retry-button').onclick = () => { if (currentId) processNote(currentId); };
 $('summary-button').onclick = () => { if (currentId) processNote(currentId, 'summary'); };
 $('speaker-filter').onchange = () => {
   speakerFilter = $('speaker-filter').value;
+  searchPosition = -1;
   if (currentNote) renderTranscript(currentNote);
 };
 $('export-button').onclick = exportTranscript;
@@ -159,3 +169,4 @@ let searchTimer;
 $('search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadNotes, 300); };
 loadNotes();
 initRecording();
+initWorkspace();

@@ -23,6 +23,9 @@ const notes = new Map([
     segments:[{sequence:0,speaker:'미확인',speakerName:'',text:'시간 정보가 없는 기존 전사',startMs:0,endMs:0}]}]
 ]);
 const requests = [];
+const bookmarksByNote = new Map();
+let failBookmark = false;
+let summaryConfigured = true;
 let failNext = false;
 let holdNext = false;
 let releaseEdit = null;
@@ -63,6 +66,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     const send = (status, data) => { res.writeHead(status, {'Content-Type':'application/json'}); res.end(JSON.stringify(data)); };
+    if (pathname === '/api/settings/summary') { send(200, {provider:'Groq', model:'openai/gpt-oss-120b', configured:summaryConfigured, keyVariable:'GROQ_API_KEY', timeoutSeconds:90}); return; }
     if (!pathname.startsWith('/api/')) {
       const file = path.resolve(staticRoot, pathname === '/' ? 'index.html' : `.${pathname}`);
       if (!file.startsWith(staticRoot + path.sep) || !fs.existsSync(file)) { res.writeHead(404); res.end(); return; }
@@ -99,7 +103,26 @@ const server = http.createServer(async (req, res) => {
     const parts = pathname.split('/').map(decodeURIComponent);
     const note = notes.get(parts[3]);
     if (!note) { send(404, {error:'노트를 찾을 수 없습니다.'}); return; }
-    if (parts[4] === 'audio') { res.writeHead(200, {'Content-Type':'audio/wav','Accept-Ranges':'bytes'}); res.end(wav); return; }
+    if (parts[4] === 'bookmarks') {
+      const entries = bookmarksByNote.get(note.id) || new Map();
+      bookmarksByNote.set(note.id, entries);
+      if (req.method === 'GET') { send(200, [...entries.values()].sort((a,b) => a.positionMs - b.positionMs)); return; }
+      if (req.method === 'DELETE') { entries.delete(parts[5]); res.writeHead(204); res.end(); return; }
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const bookmark = JSON.parse(Buffer.concat(chunks).toString());
+      if (failBookmark) { failBookmark = false; send(502, {error:'북마크 저장 오류'}); return; }
+      entries.set(parts[5], {...bookmark, id:parts[5]});
+      send(200, entries.get(parts[5])); return;
+    }
+    if (parts[4] === 'audio') {
+      const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range || '');
+      if (range) {
+        const start = Number(range[1]), end = range[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+        res.writeHead(206, {'Content-Type':'audio/wav','Accept-Ranges':'bytes','Content-Range':`bytes ${start}-${end}/${wav.length}`,'Content-Length':end - start + 1});
+        res.end(wav.subarray(start, end + 1));
+      } else { res.writeHead(200, {'Content-Type':'audio/wav','Accept-Ranges':'bytes','Content-Length':wav.length}); res.end(wav); }
+      return;
+    }
     if (parts[4] === 'progress') {
       progressReads++;
       if (failProgressReads > 0) { failProgressReads--; send(503, {error:'temporary disconnect'}); return; }
@@ -146,9 +169,10 @@ const server = http.createServer(async (req, res) => {
       note.status = 'READY';
       note.error = '';
       send(200, view(note)); return;
-    } else if (parts[4] === 'process') {
+    } else if (parts[4] === 'process' || parts[4] === 'transcribe') {
       note.segments = [{sequence:0,speaker:'1',speakerName:'',text:'업로드한 음성 전사',startMs:0,endMs:1000}];
-      note.summary = '업로드한 음성 요약'; note.status = 'READY';
+      note.summary = parts[4] === 'transcribe' ? '' : '업로드한 음성 요약'; note.status = parts[4] === 'transcribe' ? 'TRANSCRIBED' : 'READY';
+      note.progressPercent = 100; note.processingStage = parts[4] === 'transcribe' ? 'TRANSCRIPTION_COMPLETE' : 'COMPLETE';
       send(200, view(note)); return;
     } else { send(404, {error:'잘못된 테스트 요청'}); return; }
     note.summaryStale = true;
@@ -206,14 +230,48 @@ async function main() {
     await cdp('Emulation.setDeviceMetricsOverride', {width:1440,height:1080,deviceScaleFactor:1,mobile:false});
     await cdp('Page.navigate', {url:`http://127.0.0.1:${server.address().port}`});
     await waitUI(() => document.querySelectorAll('.list-item').length === 2, 'note list');
+    await waitUI(() => document.getElementById('summary-model').textContent.includes('gpt-oss-120b'), 'model settings loaded');
+    await cdp('Page.captureScreenshot', {format:'png',captureBeyondViewport:true}).then((result) => fs.writeFileSync(path.join(output, 'composer-desktop.png'), Buffer.from(result.data, 'base64')));
     await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), id);
     await waitUI(() => document.querySelectorAll('.speaker-card').length === 2, 'speaker cards');
     assert.equal(await evaluate(() => document.querySelectorAll('.transcript-segment').length), 3);
     assert.match(await evaluate(() => document.querySelector('.speaker-stats').textContent), /2개 발언/);
     console.log('PASS: speaker cards, statistics and transcript rendering');
 
+    await evaluate(() => { const input = document.getElementById('transcript-search'); input.value = '출시'; input.dispatchEvent(new Event('input')); });
+    assert.equal(await evaluate(() => document.querySelectorAll('.transcript-segment').length), 1);
+    assert.equal(await evaluate(() => document.querySelector('#note-transcript mark').textContent), '출시');
+    await evaluate(() => { const input = document.getElementById('transcript-search'); input.value = '.*'; input.dispatchEvent(new Event('input')); });
+    assert.equal(await evaluate(() => document.querySelectorAll('.transcript-segment').length), 0);
+    await evaluate(() => { const input = document.getElementById('transcript-search'); input.value = ''; input.dispatchEvent(new Event('input')); document.getElementById('export-srt').click(); });
+    await until(() => fs.readdirSync(downloads).some((file) => file.endsWith('.srt')), 'SRT download');
+    const subtitles = fs.readFileSync(path.join(downloads, fs.readdirSync(downloads).find((file) => file.endsWith('.srt'))), 'utf8');
+    assert.match(subtitles, /00:00:00,000 --> 00:00:01,500/);
+    assert.match(subtitles, /금요일 출시합니다/);
+    console.log('PASS: literal in-note search, safe highlights and timestamped SRT export');
+
     await evaluate(() => document.querySelector('[data-sequence="1"] .segment-time').click());
     await waitUI(() => document.getElementById('note-audio').currentTime >= 1.6, 'segment playback');
+    await evaluate(() => document.getElementById('note-audio').pause());
+    await evaluate(() => { const select = document.getElementById('playback-speed'); select.value = '1.5'; select.dispatchEvent(new Event('change')); document.getElementById('note-audio').currentTime = 1.7; document.getElementById('note-audio').dispatchEvent(new Event('timeupdate')); });
+    assert.equal(await evaluate(() => document.getElementById('note-audio').playbackRate), 1.5);
+    await waitUI(() => !document.getElementById('note-audio').seeking && document.querySelector('.transcript-segment[aria-current="true"]')?.dataset.sequence === '1', 'active transcript follows seek');
+    failBookmark = true;
+    await evaluate(() => { document.getElementById('bookmark-label').value = '<img src=x onerror=alert(1)>'; document.getElementById('add-bookmark').click(); });
+    await waitUI(() => !document.getElementById('add-bookmark').disabled && !document.getElementById('retry-bookmarks').hidden, 'bookmark failure retained');
+    await evaluate(() => document.getElementById('retry-bookmarks').click());
+    await waitUI(() => document.getElementById('retry-bookmarks').hidden && document.querySelectorAll('#bookmark-list .bookmark-chip').length === 1, 'bookmark retry saved');
+    assert.equal(bookmarksByNote.get(id).size, 1);
+    assert.equal(await evaluate(() => document.querySelectorAll('#bookmark-list img').length), 0);
+    await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), otherId);
+    await waitUI(() => currentId === '22222222-2222-4222-8222-222222222222', 'open other note after bookmark');
+    await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), id);
+    await waitUI(() => currentId === '11111111-1111-4111-8111-111111111111' && document.querySelectorAll('#bookmark-list .bookmark-chip').length === 1, 'bookmark restored');
+    await evaluate(() => document.querySelector('#bookmark-list .remove-bookmark').click());
+    await waitUI(() => document.querySelectorAll('#bookmark-list .bookmark-chip').length === 0, 'bookmark deletion');
+    console.log('PASS: speed control, playback synchronization, persisted bookmarks and failed-save retry without duplication');
+    await evaluate(() => { document.querySelector('[data-sequence="1"] .segment-time').click(); });
+    await waitUI(() => document.getElementById('note-audio').currentTime >= 1.6, 'restore playback after bookmark navigation');
     await evaluate(() => document.getElementById('note-audio').pause());
     const timeBefore = await evaluate(() => document.getElementById('note-audio').currentTime);
     const renamed = '<img src=x onerror=alert(1)>민수';
@@ -366,6 +424,15 @@ async function main() {
     await waitUI(() => recordingState === 'recording', 'microphone recording');
     assert.equal(await evaluate(() => document.getElementById('submit-button').disabled && document.getElementById('audio-file').disabled), true);
     await waitUI(() => document.getElementById('recording-time').textContent !== '녹음 중 00:00', 'recording timer');
+    await evaluate(() => document.getElementById('pause-recording').click());
+    await waitUI(() => recordingState === 'paused' && activeRecorder.state === 'paused', 'paused capture');
+    const pausedTime = await evaluate(() => recordingPositionMs());
+    await delay(1100);
+    assert.equal(await evaluate(() => recordingPositionMs()), pausedTime);
+    await evaluate(() => { document.getElementById('recording-bookmark-label').value = '중요 결정'; document.getElementById('add-recording-bookmark').click(); document.getElementById('pause-recording').click(); });
+    await waitUI(() => recordingState === 'recording', 'resumed capture');
+    assert.equal(await evaluate(() => recordingBookmarks.length), 1);
+    assert.equal(await evaluate(() => meterContext !== null), true);
     const countBeforeRecording = uploadCount;
     holdUpload = true;
     await evaluate(() => { window.testTracks = recordingStream.getTracks(); document.getElementById('record-button').click(); });
@@ -375,6 +442,9 @@ async function main() {
     assert.equal(await evaluate(() => document.getElementById('record-button').disabled && document.getElementById('submit-button').disabled), true);
     releaseUpload();
     await waitUI(() => !uploadBusy && document.getElementById('note-status').textContent === '완료', 'recording transcribed');
+    assert.equal(bookmarksByNote.get('33333333-3333-4333-8333-333333333333').size, 1);
+    assert.equal(await evaluate(() => meterContext === null), true);
+    console.log('PASS: pause excludes idle time, waveform lifecycle and recording bookmarks saved with the note');
     console.log('PASS: actual MediaRecorder capture, elapsed time, automatic submission and microphone release');
 
     await evaluate(() => { document.getElementById('new-note').click(); document.getElementById('record-button').click(); });
@@ -420,6 +490,16 @@ async function main() {
     await evaluate(() => document.getElementById('submit-button').click());
     await waitUI(() => !uploadBusy && document.getElementById('note-status').textContent === '완료', 'retry saved recording');
     console.log('PASS: failed recording submission keeps preview and can retry without recording again');
+
+    summaryConfigured = false;
+    await evaluate(async () => { document.getElementById('new-note').click(); await loadSummarySettings(); document.getElementById('with-summary').checked = false; document.getElementById('submit-button').click(); });
+    await waitUI(() => !uploadBusy && document.getElementById('note-status').textContent === '전사 완료', 'transcription without LLM');
+    assert.equal(await evaluate(() => document.getElementById('processing-progress').value), 100);
+    assert.equal(await evaluate(() => document.getElementById('summary-setup').textContent.includes('GROQ_API_KEY')), true);
+    assert.equal(requests.at(-1).pathname.endsWith('/transcribe'), true);
+    summaryConfigured = true;
+    await evaluate(() => { document.getElementById('with-summary').checked = true; });
+    console.log('PASS: missing summary key is explained and transcription can complete independently');
     await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), id);
     await waitUI(() => document.getElementById('note-title').textContent === '화자 기능 테스트', 'return to completed note');
 
@@ -462,7 +542,7 @@ async function main() {
     assert.deepEqual(exceptions, []);
     console.log('PASS: analytics metrics, filter, safe model text, mobile, offline, disabled, empty and recovery');
     await cdp('Browser.close').catch(() => {});
-    console.log('UI tests passed (21 workflows). Screenshots: build/ui-test/');
+    console.log('UI tests passed (25 workflows). Screenshots: build/ui-test/');
   } finally {
     if (releaseEdit) releaseEdit();
     if (releaseRead) releaseRead();

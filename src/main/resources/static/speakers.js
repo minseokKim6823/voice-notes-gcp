@@ -142,9 +142,10 @@ function renderTranscript(note) {
   const list = $('note-transcript');
   list.replaceChildren();
   const speakers = note.speakers || [];
-  const segments = (note.segments || []).filter((segment) => !speakerFilter || segment.speaker === speakerFilter);
+  const segments = filteredSegments(note);
+  updateTranscriptTools(note, segments);
   if (!segments.length) {
-    list.append(element('p', 'body-text', note.transcript || '전사 결과가 아직 없습니다.'));
+    list.append(element('p', 'body-text', transcriptQuery || speakerFilter ? '조건에 맞는 발언이 없습니다.' : note.transcript || '전사 결과가 아직 없습니다.'));
     return;
   }
   for (const segment of segments) {
@@ -161,7 +162,9 @@ function renderTranscript(note) {
     play.setAttribute('aria-label', `${name} 발언 ${timeLabel(segment.startMs)}부터 재생`);
     play.onclick = () => playSegment(note.id, segment.startMs);
     heading.append(element('strong', 'segment-speaker', name), play);
-    row.append(heading, element('p', 'segment-text', segment.text));
+    const paragraph = element('p', 'segment-text');
+    paragraph.append(highlightText(segment.text));
+    row.append(heading, paragraph);
     const details = element('details', 'segment-editor');
     details.append(element('summary', '', '화자 / 발언 편집'));
     const assignment = element('form', 'segment-assignment');
@@ -208,6 +211,7 @@ function renderTranscript(note) {
     row.append(details);
     list.append(row);
   }
+  syncPlayback();
 }
 
 async function playSegment(noteId, startMs) {
@@ -235,7 +239,7 @@ async function playSegment(noteId, startMs) {
 function exportTranscript() {
   if (!currentNote) return;
   const note = currentNote;
-  const segments = note.segments.filter((segment) => !speakerFilter || segment.speaker === speakerFilter);
+  const segments = filteredSegments(note);
   const lines = segments.map((segment) => {
     const name = note.speakers.find((speaker) => speaker.id === segment.speaker)?.name || segment.speakerName || `화자 ${segment.speaker}`;
     const time = segment.endMs > segment.startMs ? `[${timeLabel(segment.startMs)} – ${timeLabel(segment.endMs)}] ` : '';
