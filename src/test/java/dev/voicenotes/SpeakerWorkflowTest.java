@@ -33,7 +33,9 @@ class SpeakerWorkflowTest {
     private final MongoTranscriptStore transcripts = mock(MongoTranscriptStore.class);
     private final ExaoneSummarizer exaone = mock(ExaoneSummarizer.class);
     private final NoteRepository repository = mock(NoteRepository.class);
-    private final NoteService notes = new NoteService(google, transcripts, exaone, repository);
+    private final ProcessingAnalytics analytics = new ProcessingAnalytics(mock(ClickHouseAnalytics.class));
+    private final NoteService notes = new NoteService(google, transcripts, exaone, repository,
+            new SpeechTranscriber(google, null, "google", "chirp_3", analytics), analytics);
     private final AtomicReference<List<TranscriptSegment>> stored = new AtomicReference<>();
     private NoteEntity entity;
     private MockMvc mvc;

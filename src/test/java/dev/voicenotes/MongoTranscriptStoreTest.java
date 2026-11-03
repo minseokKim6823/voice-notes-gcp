@@ -1,4 +1,6 @@
-package dev.voicenotes;
+package dev.voicenotes.persistence;
+
+import dev.voicenotes.domain.TranscriptSegment;
 
 import dev.voicenotes.api.*;
 import dev.voicenotes.application.*;

@@ -1,4 +1,23 @@
 services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-voice_notes}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-voice_notes}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-local-analytics-only}
+    ports:
+      - "127.0.0.1:8123:8123"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
   mongodb:
     image: mongo:8.0
     ports:
@@ -12,4 +31,5 @@ services:
       retries: 30
 
 volumes:
+  clickhouse_data:
   mongodb_data:

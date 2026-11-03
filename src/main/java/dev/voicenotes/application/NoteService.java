@@ -17,18 +17,22 @@ import java.util.UUID;
 @Service
 public class NoteService {
     private static final Set<String> TYPES = Set.of("audio/webm", "audio/wav", "audio/x-wav",
-            "audio/mpeg", "audio/mp3", "audio/flac", "audio/ogg");
+            "audio/mpeg", "audio/mp3", "audio/flac", "audio/ogg", "audio/mp4", "audio/x-m4a");
     private final GoogleGateway google;
+    private final SpeechTranscriber speech;
     private final MongoTranscriptStore transcripts;
     private final ExaoneSummarizer exaone;
     private final NoteRepository repository;
+    private final ProcessingAnalytics analytics;
 
     public NoteService(GoogleGateway google, MongoTranscriptStore transcripts,
-            ExaoneSummarizer exaone, NoteRepository repository) {
+            ExaoneSummarizer exaone, NoteRepository repository, SpeechTranscriber speech, ProcessingAnalytics analytics) {
         this.google = google;
+        this.speech = speech;
         this.transcripts = transcripts;
         this.exaone = exaone;
         this.repository = repository;
+        this.analytics = analytics;
     }
 
     private NoteEntity entity(String id) {
@@ -42,14 +46,16 @@ public class NoteService {
 
     public Note create(String title, MultipartFile file) throws IOException {
         if (file.isEmpty()) throw new IllegalArgumentException("음성 파일을 선택하세요.");
-        String type = file.getContentType();
-        if (!TYPES.contains(type)) throw new IllegalArgumentException("webm, wav, mp3, flac, ogg 음성 파일만 업로드할 수 있습니다.");
+        if (file.getSize() > WhisperApiClient.MAX_AUDIO_BYTES) throw new IllegalArgumentException("음성은 24MB 이하만 사용할 수 있습니다.");
+        String type = file.getContentType() == null ? "" : file.getContentType().split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
+        if (!TYPES.contains(type)) throw new IllegalArgumentException("webm, wav, mp3, flac, ogg, m4a 음성만 사용할 수 있습니다.");
         String id = UUID.randomUUID().toString();
         String original = file.getOriginalFilename() == null ? "recording" : file.getOriginalFilename();
         String safeName = original.replaceAll("[^\\p{L}\\p{N}._ -]", "_");
         if (safeName.isBlank()) safeName = "recording";
         String cleanTitle = title == null || title.isBlank() ? safeName : title.trim();
         if (cleanTitle.length() > 120) throw new IllegalArgumentException("제목은 120자 이하여야 합니다.");
+        speech.validateConfiguration();
         String name = "audio/" + id + "/" + safeName;
         google.put(name, file.getBytes(), type);
         NoteEntity note = repository.save(new NoteEntity(id, cleanTitle, safeName, name, type));
@@ -130,6 +136,20 @@ public class NoteService {
     }
 
     private Note summarize(NoteEntity note, boolean summaryOnly) throws IOException {
+        String action = summaryOnly ? "regenerate" : "FAILED".equals(note.status) ? "retry" : "process";
+        try (var attempt = analytics.attempt(note.id, action)) {
+            try {
+                Note result = performSummary(note, summaryOnly);
+                attempt.success();
+                return result;
+            } catch (IOException | RuntimeException error) {
+                attempt.failure(error);
+                throw error;
+            }
+        }
+    }
+
+    private Note performSummary(NoteEntity note, boolean summaryOnly) throws IOException {
         List<TranscriptSegment> segments = summaryOnly ? transcripts.get(note.id) : null;
         if (summaryOnly && segments.isEmpty()) throw new IllegalStateException("전사 완료 후 요약을 생성할 수 있습니다.");
         note.status = "PROCESSING";
@@ -142,7 +162,7 @@ public class NoteService {
             if (segments == null) segments = transcripts.get(note.id);
             if (segments.isEmpty()) {
                 updateProgress(note, "TRANSCRIBING", 5);
-                segments = google.transcribe(note.audioObject, percent -> updateProgress(note, "TRANSCRIBING", 5 + percent * 70 / 100));
+                segments = speech.transcribe(note.audioObject, note.contentType, percent -> updateProgress(note, "TRANSCRIBING", 5 + percent * 70 / 100));
                 if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
                 updateProgress(note, "SAVING_TRANSCRIPT", 78);
                 transcripts.save(note.id, segments);

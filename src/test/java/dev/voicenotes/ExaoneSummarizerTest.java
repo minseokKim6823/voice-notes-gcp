@@ -1,4 +1,7 @@
-package dev.voicenotes;
+package dev.voicenotes.application;
+
+import dev.voicenotes.infrastructure.ExaoneApiClient;
+import dev.voicenotes.domain.TranscriptSegment;
 
 import dev.voicenotes.api.*;
 import dev.voicenotes.application.*;

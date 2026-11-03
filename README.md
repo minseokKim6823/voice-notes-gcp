@@ -1,23 +1,23 @@
 # 보이스 노트
 
-회의, 강의, 인터뷰의 음성을 텍스트와 요약으로 정리하고, 나중에 전사 내용으로 다시 찾을 수 있는 개인 학습용 음성 노트입니다. 브라우저에서 직접 녹음하거나 기존 음성 파일을 올리면 한국어 전사, 화자 구분, AI 요약을 하나의 노트에서 확인할 수 있습니다.
+회의, 강의, 인터뷰의 음성을 텍스트와 요약으로 정리하고, 나중에 전사 내용으로 다시 찾을 수 있는 개인 학습용 음성 노트입니다. **녹음 시작 → 녹음 종료하고 전사**를 누르면 Whisper 한국어 전사와 GLM 요약을 자동으로 실행합니다. 기존 음성 파일도 선택할 수 있습니다.
 
-Spring Boot 3.5 / Java 17로 서버를 구성하고 Google Cloud, EXAONE, MariaDB, MongoDB를 연결합니다.
+Spring Boot 3.5 / Java 17로 서버를 구성하고 OpenAI Whisper API, Google Cloud Storage, Z.ai GLM, MariaDB, MongoDB, ClickHouse를 연결합니다.
 
 ## 주요 기능
 
 | 기능 | 설명 |
 | --- | --- |
-| 브라우저 녹음 | 마이크로 음성을 녹음하고 WebM 파일로 업로드합니다. 마이크 권한과 WebM 녹음을 지원하는 브라우저가 필요하며, localhost 또는 HTTPS에서 사용할 수 있습니다. |
-| 음성 파일 업로드 | WebM, WAV, MP3, FLAC, OGG 형식의 30MB 이하 파일을 받습니다. 제목은 최대 120자이며, 비워 두면 파일 이름을 사용합니다. |
+| 브라우저 녹음 | 마이크로 바로 녹음하고 종료하면 자동으로 저장·전사·요약합니다. 녹음 시간 표시와 취소를 지원하며 브라우저에 따라 WebM/Opus, MP4/AAC 또는 OGG로 녹음합니다. localhost 또는 HTTPS와 마이크 권한이 필요합니다. |
+| 음성 파일 업로드 | 기존 음성 파일 기능에서 WebM, WAV, MP3, FLAC, OGG, M4A/MP4 형식의 24MB 이하 파일을 선택할 수 있습니다. 제목은 최대 120자입니다. |
 | 실시간 진행률 | 업로드 전송률과 전사·저장·요약 진행률을 표시합니다. 서버 진행 상태를 1초 간격으로 조회하며 처리 중 노트를 다시 열면 이어서 표시합니다. |
-| 한국어 전사와 화자 구분 | Google Speech-to-Text V2의 Chirp 3 모델로 음성을 한국어 텍스트로 변환하고 화자별 발언을 구분합니다. 화자 라벨은 발언자를 구별하는 표시이며 실제 이름을 식별하지는 않습니다. |
+| 한국어 전사 | 기본값은 Whisper `whisper-1`이며 문장별 텍스트와 시간 정보를 저장합니다. 자동 화자 구분이 필요하면 `VOICE_NOTES_STT_PROVIDER=google`으로 Chirp 3를 사용할 수 있습니다. |
 | 화자 관리 | 화자 이름을 최대 60자로 지정하고, 잘못 나뉜 화자의 전체 발언을 다른 화자로 합칩니다. 이름과 화자 ID를 별도로 저장합니다. |
 | 발언별 화자 수정·분리 | 개별 발언을 기존 화자로 옮기거나 새 화자를 지정해 분리합니다. 전사 문장도 최대 5,000자로 수정할 수 있습니다. 발언 순서와 시간 정보는 유지합니다. |
 | 화자별 보기·내보내기 | 화자별 발언 수와 구간 시간을 표시하고, 선택한 화자의 발언만 필터링합니다. 전체 또는 필터링한 전사를 화자 이름과 함께 UTF-8 텍스트 파일로 저장합니다. |
 | 발언 구간 재생 | 시간 정보가 있는 발언의 시간 버튼을 누르면 원본 음성의 해당 위치부터 재생합니다. 시간 정보가 없는 기존 전사에는 재생 버튼을 비활성화합니다. |
-| AI 요약 | EXAONE에 전사 내용을 보내 화자별 발언, 핵심 내용, 결정 사항, 할 일을 정리하도록 요청합니다. 긴 녹취는 12,000자씩 나누어 요약한 뒤 하나의 요약으로 통합합니다. |
-| 수정 후 요약 재생성 | 화자나 발언을 수정하면 기존 요약에 갱신 안내를 표시합니다. **요약 다시 생성**은 수정된 전사를 사용하며 Google 전사를 다시 호출하지 않습니다. 요약 실패 시 기존 요약과 수정 내용은 유지합니다. |
+| AI 요약 | 무료로 표시된 Z.ai GLM-4.7-Flash API에 전사를 보내 화자별 발언, 핵심 내용, 결정 사항과 할 일을 정리합니다. 긴 녹취는 12,000자씩 나누어 요약합니다. |
+| 수정 후 요약 재생성 | 화자나 발언을 수정한 뒤 기존 전사를 사용해 요약을 다시 생성합니다. 실패해도 수정 내용은 유지합니다. |
 | 노트 목록과 상세 조회 | 저장된 노트를 생성일 기준 최신순으로 보여 줍니다. 노트 상세 화면에서 제목, 생성 시간, 처리 상태, AI 요약, 전체 전사를 확인할 수 있습니다. |
 | 원본 음성 재생 | 노트에 저장된 원본 음성을 브라우저 오디오 플레이어로 재생해 전사 내용과 비교할 수 있습니다. |
 | 전사 내용 검색 | MongoDB에 저장된 전사 본문에서 검색어가 포함된 노트를 찾습니다. 한글 부분 문자열을 지원하고 영문 대소문자는 구분하지 않습니다. |
@@ -26,8 +26,8 @@ Spring Boot 3.5 / Java 17로 서버를 구성하고 Google Cloud, EXAONE, MariaD
 ## 사용 방법
 
 1. 아래 실행 안내에 따라 서버와 필요한 서비스를 준비한 뒤 `http://localhost:8080`에 접속합니다.
-2. **새 노트** 화면에서 제목을 입력하고 **파일 선택**으로 음성을 고르거나 **녹음 시작**으로 녹음합니다. 녹음을 마치면 **녹음 종료**를 누릅니다.
-3. **전사 및 요약 시작**을 누르면 음성을 업로드하고 전사와 요약을 순서대로 실행합니다. 완료까지 걸리는 시간은 음성 길이와 외부 API 처리 시간에 따라 달라집니다.
+2. 제목을 입력하고 **녹음 시작**을 누른 뒤 마이크 권한을 허용합니다. 녹음 중에는 경과 시간을 표시하고 **녹음 취소**로 버릴 수 있습니다.
+3. **녹음 종료하고 전사**를 누르면 음성 저장·Whisper 전사·GLM 요약이 자동으로 시작됩니다. 파일 전송이 실패하면 녹음 미리 듣기와 재시도 버튼을 사용할 수 있습니다.
 4. 노트 상세 화면에서 원본 음성, AI 요약, 전체 전사를 확인합니다. 실패한 노트는 오류 내용을 확인한 뒤 **다시 처리하기**를 누릅니다.
 5. 왼쪽 노트 목록에서 이전 기록을 열거나 **전사 내용 검색**에 검색어를 입력해 관련 노트를 찾습니다.
 6. **화자 관리**에서 이름을 저장하거나 합칠 화자를 선택합니다. 각 발언의 **화자 / 발언 편집**에서는 화자 변경, 새 화자로 분리, 문장 수정을 할 수 있습니다.
@@ -60,7 +60,7 @@ Spring Boot 3.5 / Java 17로 서버를 구성하고 Google Cloud, EXAONE, MariaD
 | 단계 | 전체 진행률 | 갱신 기준 |
 | --- | --- | --- |
 | 처리 준비 | 0% | 처리 요청 시작 |
-| 음성 전사 | 5~75% | Google [작업 메타데이터](https://docs.cloud.google.com/speech-to-text/docs/reference/rest/v2/OperationMetadata)의 `progressPercent` |
+| 음성 전사 | 5~75% | Whisper는 중간 진행률이 없어 대기 후 완료 시 이동합니다. Google 모드는 작업 메타데이터를 사용합니다. |
 | 전사 저장 | 78% | MongoDB 저장 시작 |
 | AI 요약 | 80~95% | 완료한 분할 요약·통합 요청 수 |
 | 요약 저장 | 98% | MariaDB 최종 저장 시작 |
@@ -73,9 +73,9 @@ Spring Boot 3.5 / Java 17로 서버를 구성하고 Google Cloud, EXAONE, MariaD
 ```mermaid
 flowchart LR
     A[녹음 또는 파일 선택] --> B[GCS에 원본 음성 저장]
-    B --> C[Speech-to-Text 전사와 화자 구분]
+    B --> C[Whisper 한국어 전사]
     C --> D[MongoDB에 전사 저장]
-    D --> E[EXAONE 요약]
+    D --> E[GLM 요약]
     E --> F[MariaDB에 요약과 완료 상태 저장]
     F --> G[노트 조회와 음성 재생]
 ```
@@ -94,8 +94,9 @@ flowchart LR
 | 역할 | 구성 |
 | --- | --- |
 | 음성 원본 저장 | Google Cloud Storage |
-| 한국어 전사·화자 분리 | Google Speech-to-Text V2, Chirp 3 (`us`, `ko-KR`) |
-| 회의 요약 | 기존 EXAONE Chat Completions API |
+| 한국어 전사 | OpenAI Whisper API, `whisper-1`, `ko` |
+| 선택적 화자 구분 | Google Speech-to-Text V2, Chirp 3 (`VOICE_NOTES_STT_PROVIDER=google`) |
+| 회의 요약 | Z.ai GLM-4.7-Flash Chat Completions API |
 | 노트 정보·처리 상태·진행률·요약 저장 | 기존 MariaDB의 `voice_notes` 테이블 |
 | 화자별 전사 저장·본문 검색 | MongoDB, `voice_note_transcripts` 컬렉션 |
 
@@ -105,48 +106,64 @@ Java 17, Docker, 접속 가능한 MariaDB를 준비합니다. MariaDB 서버·�
 
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-# .env의 DB, GCP, EXAONE 값을 입력합니다.
-docker compose up -d mongodb
+# .env의 DB, GCP, Whisper 및 GLM API 키를 입력합니다.
+docker compose up -d --wait mongodb clickhouse
 .\gradlew.bat bootRun
 ```
 
-`http://localhost:8080`에서 녹음하거나 음성을 업로드합니다. 녹음은 localhost 또는 HTTPS에서 마이크 권한을 허용해야 동작합니다. WebM, WAV, MP3, FLAC, OGG 형식의 30MB 이하 파일을 받습니다.
+`http://localhost:8080`에서 바로 녹음할 수 있습니다. localhost 또는 HTTPS에서 마이크 권한을 허용해야 합니다. 음성 크기 제한은 24MB입니다.
 
 `.env`는 프로젝트 루트에서 실행할 때 Spring Boot가 자동으로 읽으며 Git·GCP 업로드 제외 목록에 포함됩니다. 배포에서는 이 파일 없이 환경 변수로 설정할 수 있습니다. 민감한 값은 `.env`에 두고 커밋하지 마세요.
 
-## EXAONE API 연결
+## Whisper 연결
 
-2026-10-04 확인 기준 최신 범용 EXAONE 언어 모델인 **K-EXAONE 2.0**을 기본 모델명으로 지정했습니다. [LG AI Research 공식 저장소](https://github.com/LG-AI-EXAONE/K-EXAONE-2.0)와 [공식 모델 카드](https://huggingface.co/LGAI-EXAONE/K-EXAONE-2.0-750B-A37B)의 Chat Completions 예제를 기준으로 구성했습니다. 모델은 원격 서버에서 실행하며 가중치를 다운로드하지 않습니다.
+기본 전사 엔진은 OpenAI의 호스팅된 Whisper API입니다. 서버 환경 변수 `OPENAI_API_KEY`를 설정하거나 `.env` 파일에 API 키를 입력하세요. 키는 브라우저에 전달하지 않습니다.
+
+```yaml
+voice-notes:
+  stt-provider: whisper
+  whisper:
+    api-key: YOUR_OPENAI_API_KEY
+    base-url: https://api.openai.com/v1
+    timeout: 10m
+```
+
+녹음 종료 후 서버가 GCS에 음성을 보관하고 `POST /v1/audio/transcriptions`에 `model=whisper-1`, `language=ko`, `response_format=verbose_json`과 음성을 전송합니다. [공식 API 규격](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)에 맞춰 문장별 시작·종료 시간을 저장합니다. **녹음 중 실시간 자막은 제공하지 않으며**, 종료한 녹음을 한 번에 전사합니다. 원본 보관용 GCP와 DB 설정도 필요합니다.
+
+Whisper는 자동 화자 구분을 제공하지 않아 발언을 `미확인 화자`로 표시합니다. 개별 발언 편집에서 화자를 수동 지정할 수 있습니다. 자동 화자 구분이 필요하면 `VOICE_NOTES_STT_PROVIDER=google`로 기존 Chirp 3 경로를 사용할 수 있습니다. 이 경우 OpenAI 키는 필요하지 않습니다. 전사가 이미 저장된 노트는 엔진을 바꾸거나 요약을 재시도해도 다시 전사하지 않습니다.
+
+[OpenAI 공식 안내](https://developers.openai.com/api/docs/guides/speech-to-text)는 호스팅된 `whisper-1`의 종료일을 2027년 2월 26일로 명시합니다. 이 구현은 요청한 Whisper 모델을 사용하며, 해당 API 종료 전에는 전사 엔진 교체가 필요합니다.
+
+
+## GLM 무료 API 연결
+
+기본 요약 엔진은 Z.ai API의 **GLM-4.7-Flash**입니다. Z.ai의 [공식 가격표](https://docs.z.ai/guides/overview/pricing)는 이 모델의 입력·출력 API 가격을 무료로 표시합니다. 계정, 요청 속도, 무료 제공 정책이 바뀔 수 있으므로 Z.ai 콘솔에서도 확인하세요. 모델을 직접 실행하는 설정이 아니므로 앱 PC의 750B 추론 속도 문제를 피할 수 있습니다.
+
+Z.ai 개발자 콘솔에서 API 키를 발급한 후 서버를 실행하는 PowerShell에서 환경 변수로 넣습니다. 키는 화면이나 저장소에 올리지 마세요.
+
+```powershell
+$env:GLM_API_KEY = 'YOUR_ZAI_API_KEY'
+.\gradlew.bat bootRun
+```
+
+기본 설정은 `https://api.z.ai/api/paas/v4`, 모델 `glm-4.7-flash`를 사용하며 OpenAI 호환 Chat Completions 요청을 보냅니다. `.env`에 이전 EXAONE API 주소·모델이 설정되어 있으면 새 GLM 변수 또는 기본값과 충돌할 수 있으니 지우거나 GLM 값으로 바꾸세요.
 
 ```yaml
 voice-notes:
   exaone:
-    base-url: https://YOUR_API_HOST/v1
-    api-key: YOUR_API_KEY
-    model: LGAI-EXAONE/K-EXAONE-2.0-750B-A37B
+    base-url: https://api.z.ai/api/paas/v4
+    model: glm-4.7-flash
 ```
 
-주소는 `/chat/completions` 앞까지 넣습니다. 서버가 `K-EXAONE-2.0-750B-A37B`처럼 다른 별칭으로 모델을 제공하면 `model`을 그 이름으로 바꿉니다. 모델명 설정만으로 API 제공업체에 없는 모델이 설치되거나 제공되지는 않습니다.
-
-**API 주소를 얻는 방법:** EXAONE 공개 저장소는 모델과 서버 실행 방법을 제공하며, 바로 사용할 수 있는 공용 API 주소나 키를 발급하지 않습니다. 이미 운영 중인 API가 있다면 운영자/제공업체의 콘솔에서 Chat Completions 엔드포인트와 API 키를 확인하세요. 예를 들어 엔드포인트가 `https://example.com/v1/chat/completions`이면 `base-url`은 `https://example.com/v1`입니다. 서버에 등록된 모델명은 제공업체 문서나 다음 조회 결과의 `data[].id`로 확인할 수 있습니다(서버가 `/models`를 제공하는 경우).
-
-[FriendliAI](https://learn.friendli.ai/articles/4239526803-q6-1-where-do-i-find-or-create-my-api-key)에서 키를 발급하는 경우, Model APIs에 현재 제공되는 EXAONE 모델은 `https://api.friendli.ai/serverless/v1`과 해당 모델 ID를 사용합니다. 현재 기본 모델인 K-EXAONE 2.0은 [Dedicated Endpoint 모델](https://friendli.ai/models/LGAI-EXAONE/K-EXAONE-2.0-750B-A37B)이므로 엔드포인트를 배포한 뒤 `https://api.friendli.ai/dedicated/v1`과 엔드포인트 ID를 사용해야 합니다.
-
-```powershell
-$base = 'https://YOUR_API_HOST/v1'
-$headers = @{ Authorization = "Bearer $env:EXAONE_API_KEY" }
-(Invoke-RestMethod -Uri "$base/models" -Headers $headers).data.id
-```
-
-API 키는 `.env`의 `EXAONE_API_KEY`에 넣고 터미널 출력이나 채팅에 붙여넣지 마세요. 키가 필요 없는 자체 서버라면 위 조회 명령에서 `-Headers $headers`를 빼면 됩니다. 자체 서버를 운영한다면 [LG AI Research의 K-EXAONE 2.0 서빙 안내](https://github.com/LG-AI-EXAONE/K-EXAONE-2.0#serving-k-exaone-20)에 따라 vLLM/SGLang을 띄우고 서버 주소의 `/v1`을 사용합니다. 공식 750B 모델 서빙 예시는 H200 GPU 16개를 사용하므로, 서버가 없다면 먼저 제공업체나 별도 추론 환경이 필요합니다.
+키를 입력한 뒤 서버를 재시작하고 실패한 노트에서 **다시 처리하기**를 누르면 저장된 전사를 사용해 요약부터 재시도합니다. 환경 변수로 설정한 키는 `.env`의 `GLM_API_KEY`에 실제 발급한 키를 넣고 파일을 커밋하지 마세요. 기존 환경 변수 `EXAONE_API_KEY`, `EXAONE_BASE_URL`, `EXAONE_MODEL`도 호환되며 `GLM_*` 변수가 우선합니다.
 
 - 요청: `POST {base-url}/chat/completions`, JSON `model`, `messages`, `stream: false`, `max_tokens`, `temperature`, `top_p`.
 - 인증: 키가 있으면 `Authorization: Bearer ...`.
 - 응답: `choices[0].message.content`를 최종 요약으로 사용합니다. 빈 응답과 `finish_reason: length`인 잘린 요약은 실패로 처리합니다.
-- 기본값은 `chat_template_kwargs.enable_thinking: false`입니다. 게이트웨이가 확장 필드를 받지 않으면 YAML의 `voice-notes.exaone.include-chat-template-kwargs`를 `false`로 바꿉니다.
-- 긴 녹취는 12,000자씩 요약한 뒤 통합합니다. 요약 실패 후 재시도하면 ES에 저장된 전사를 재사용합니다.
+- GLM 요청은 호환성을 위해 `chat_template_kwargs` 없이 보냅니다.
+- 긴 녹취는 12,000자씩 요약한 뒤 통합합니다. 요약 실패 후 재시도하면 MongoDB에 저장된 전사를 재사용합니다.
 
-위 형식과 호환되는 API는 설정만 채우면 연결됩니다. 다른 인증·요청·응답 규격은 `ExaoneApiClient.java`에서 맞춰야 합니다.
+위 설정으로 Z.ai API를 연결합니다. 다른 인증·요청·응답 규격은 `ExaoneApiClient.java`에서 맞춰야 합니다.
 
 ## MariaDB와 MongoDB
 
@@ -212,11 +229,15 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | `DATABASE_URL` | `jdbc:mariadb://localhost:3306/voice_notes` |
 | `DATABASE_USER`, `DATABASE_PASSWORD` | 기존 MariaDB 인증 정보 |
 | `DATABASE_INIT_MODE` | `always`; SQL 사전 실행 시 `never` |
-| `EXAONE_BASE_URL`, `EXAONE_API_KEY` | 기존 API 기본 주소와 키 |
-| `EXAONE_MODEL` | `LGAI-EXAONE/K-EXAONE-2.0-750B-A37B` |
-| `EXAONE_TIMEOUT` | `10m` |
+| `GLM_BASE_URL`, `GLM_API_KEY` | `https://api.z.ai/api/paas/v4`, Z.ai API 키 |
+| `GLM_MODEL` | `glm-4.7-flash` |
+| `GLM_TIMEOUT` | `10m` |
+| `OPENAI_API_KEY` | 서버 전용 Whisper API 키 |
+| `WHISPER_BASE_URL`, `WHISPER_TIMEOUT` | `https://api.openai.com/v1`, `10m` |
+| `VOICE_NOTES_STT_PROVIDER` | `whisper`; Google 전사는 `google` |
+| `EXAONE_*` | 예전 요약 설정 이름; 없을 때 GLM 설정 기본값과 호환 |
 | `EXAONE_MAX_OUTPUT_TOKENS` | `4096` |
-| `EXAONE_INCLUDE_CHAT_TEMPLATE_KWARGS` | `true` |
+| `EXAONE_INCLUDE_CHAT_TEMPLATE_KWARGS` | `false` |
 | `MONGODB_URI` | `mongodb://localhost:27017/voice_notes?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000`; MongoDB 연결 URI |
 | `GOOGLE_CLOUD_PROJECT`, `VOICE_NOTES_BUCKET` | GCP 프로젝트와 버킷 |
 | `VOICE_NOTES_SPEECH_LOCATION`, `VOICE_NOTES_SPEECH_MODEL` | `us`, `chirp_3` |
@@ -228,8 +249,8 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | 요청 | 동작 |
 | --- | --- |
 | `POST /api/notes` | multipart `file`, 선택적 `title`; GCS 업로드·MariaDB 저장 |
-| `POST /api/notes/{id}/process` | 화자 분리 전사·MongoDB 저장·EXAONE 요약 |
-| `POST /api/notes/{id}/transcribe` | Google Speech-to-Text 전사만 실행·MongoDB 저장; EXAONE 미호출 |
+| `POST /api/notes/{id}/process` | 선택한 엔진으로 전사·MongoDB 저장·GLM 요약 |
+| `POST /api/notes/{id}/transcribe` | Google Speech-to-Text 전사만 실행·MongoDB 저장; 요약 미호출 |
 | `GET /api/notes/{id}/progress` | `id`, `status`, `progressPercent`, `processingStage`, `error`; 전사 본문 조회 없이 진행 상태 반환 |
 | `GET /api/notes` | 노트 목록; 전사 본문은 상세 조회에서 반환 |
 | `GET /api/notes/{id}` | 요약·화자별 전사 상세 조회 |

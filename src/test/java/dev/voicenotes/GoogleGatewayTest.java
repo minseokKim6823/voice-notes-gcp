@@ -1,4 +1,4 @@
-package dev.voicenotes;
+package dev.voicenotes.infrastructure;
 
 import dev.voicenotes.api.*;
 import dev.voicenotes.application.*;

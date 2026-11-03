@@ -122,6 +122,6 @@ public class NoteController {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> tooLarge() {
-        return ResponseEntity.status(413).body(Map.of("error", "음성 파일은 30MB 이하만 업로드할 수 있습니다."));
+        return ResponseEntity.status(413).body(Map.of("error", "음성은 24MB 이하만 사용할 수 있습니다."));
     }
 }

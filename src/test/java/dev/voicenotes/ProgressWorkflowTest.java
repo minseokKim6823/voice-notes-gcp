@@ -32,7 +32,9 @@ class ProgressWorkflowTest {
     private final MongoTranscriptStore transcripts = mock(MongoTranscriptStore.class);
     private final ExaoneSummarizer exaone = mock(ExaoneSummarizer.class);
     private final NoteRepository repository = mock(NoteRepository.class);
-    private final NoteService service = new NoteService(google, transcripts, exaone, repository);
+    private final ProcessingAnalytics analytics = new ProcessingAnalytics(mock(ClickHouseAnalytics.class));
+    private final NoteService service = new NoteService(google, transcripts, exaone, repository,
+            new SpeechTranscriber(google, null, "google", "chirp_3", analytics), analytics);
     private final NoteEntity note = new NoteEntity(UUID.randomUUID().toString(), "회의", "a.wav", "audio/a.wav", "audio/wav");
 
     @Test

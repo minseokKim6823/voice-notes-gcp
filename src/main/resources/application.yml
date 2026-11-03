@@ -28,18 +28,30 @@ spring:
           time_zone: UTC
   servlet:
     multipart:
-      max-file-size: 30MB
-      max-request-size: 31MB
+      max-file-size: 24000000B
+      max-request-size: 25000000B
 voice-notes:
+  analytics:
+    enabled: ${CLICKHOUSE_ENABLED:true}
+    url: ${CLICKHOUSE_URL:http://localhost:8123}
+    database: ${CLICKHOUSE_DATABASE:voice_notes}
+    username: ${CLICKHOUSE_USER:voice_notes}
+    password: ${CLICKHOUSE_PASSWORD:local-analytics-only}
+    timeout: ${CLICKHOUSE_TIMEOUT:3s}
+  stt-provider: ${VOICE_NOTES_STT_PROVIDER:whisper}
+  whisper:
+    base-url: ${WHISPER_BASE_URL:https://api.openai.com/v1}
+    api-key: ${OPENAI_API_KEY:}
+    timeout: ${WHISPER_TIMEOUT:10m}
   project-id: ${GOOGLE_CLOUD_PROJECT:}
   bucket: ${VOICE_NOTES_BUCKET:}
   speech-location: ${VOICE_NOTES_SPEECH_LOCATION:us}
   speech-model: ${VOICE_NOTES_SPEECH_MODEL:chirp_3}
   speech-word-time-offsets: ${VOICE_NOTES_SPEECH_WORD_TIME_OFFSETS:false}
   exaone:
-    base-url: ${EXAONE_BASE_URL:}
-    api-key: ${EXAONE_API_KEY:}
-    model: ${EXAONE_MODEL:LGAI-EXAONE/K-EXAONE-2.0-750B-A37B}
-    timeout: ${EXAONE_TIMEOUT:10m}
+    base-url: ${GLM_BASE_URL:${EXAONE_BASE_URL:https://api.z.ai/api/paas/v4}}
+    api-key: ${GLM_API_KEY:${EXAONE_API_KEY:}}
+    model: ${GLM_MODEL:${EXAONE_MODEL:glm-4.7-flash}}
+    timeout: ${GLM_TIMEOUT:${EXAONE_TIMEOUT:10m}}
     max-output-tokens: ${EXAONE_MAX_OUTPUT_TOKENS:4096}
-    include-chat-template-kwargs: ${EXAONE_INCLUDE_CHAT_TEMPLATE_KWARGS:true}
+    include-chat-template-kwargs: ${EXAONE_INCLUDE_CHAT_TEMPLATE_KWARGS:false}
