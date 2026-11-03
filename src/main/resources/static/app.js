@@ -1,7 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let selectedFile = null;
-let recorder = null;
-let chunks = [];
+let uploadBusy = false;
 let currentId = null;
 let currentNote = null;
 const processingIds = new Set();
@@ -32,6 +31,7 @@ function showComposer() {
 }
 
 async function openNote(id) {
+  if (recordingState !== 'idle') { message('녹음을 종료하거나 취소한 뒤 노트를 열어 주세요.'); return; }
   const version = ++selectionVersion;
   try {
     const note = await api(`/api/notes/${id}`);
@@ -115,49 +115,25 @@ async function processNote(id, action = 'process') {
 }
 
 $('audio-file').onchange = (event) => {
+  if (uploadBusy || recordingState !== 'idle') return;
+  clearRecordingPreview();
   selectedFile = event.target.files[0] || null;
-  $('selected-file').textContent = selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1048576).toFixed(1)}MB` : '';
+  $('selected-file').textContent = selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1_000_000).toFixed(1)}MB` : '';
   $('submit-button').disabled = !selectedFile;
 };
 
-$('record-button').onclick = async () => {
-  if (recorder?.state === 'recording') { recorder.stop(); return; }
-  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported('audio/webm')) {
-    message('이 브라우저의 녹음 형식은 지원되지 않습니다. 음성 파일을 선택해 주세요.', true);
-    return;
-  }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    recorder = new MediaRecorder(stream, {mimeType:'audio/webm'});
-    chunks = [];
-    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-    recorder.onstop = () => {
-      const mime = recorder.mimeType.split(';')[0];
-      selectedFile = new File(chunks, `recording-${Date.now()}.webm`, {type:mime});
-      $('selected-file').textContent = `녹음 완료 · ${(selectedFile.size / 1048576).toFixed(1)}MB`;
-      $('submit-button').disabled = false;
-      $('record-button').textContent = '●  녹음 시작';
-      $('record-button').classList.remove('recording');
-      stream.getTracks().forEach((track) => track.stop());
-    };
-    recorder.start();
-    $('record-button').textContent = '■  녹음 종료';
-    $('record-button').classList.add('recording');
-    message('녹음 중입니다. 마치면 녹음 종료를 누르세요.');
-  } catch (error) { message(`마이크를 사용할 수 없습니다: ${error.message}`, true); }
-};
-
-$('submit-button').onclick = async () => {
-  if (!selectedFile) return;
-  if (selectedFile.size > 30 * 1024 * 1024) {
-    message('음성 파일은 30MB 이하만 업로드할 수 있습니다.', true);
+async function submitNote() {
+  if (!selectedFile || uploadBusy || recordingState !== 'idle') return;
+  if (!selectedFile.size || selectedFile.size > MAX_AUDIO_BYTES) {
+    message('음성은 비어 있지 않은 24MB 이하 데이터여야 합니다.', true);
     return;
   }
   const body = new FormData();
   body.append('title', $('title').value);
   body.append('file', selectedFile);
-  $('submit-button').disabled = true;
-  message('업로드 중입니다…');
+  uploadBusy = true;
+  updateRecordingControls();
+  message('음성을 저장하고 있습니다…');
   try {
     const note = await uploadNote(body);
     await loadNotes();
@@ -165,8 +141,10 @@ $('submit-button').onclick = async () => {
     message('음성을 전사하고 요약하는 중입니다. 길이에 따라 몇 분 걸릴 수 있습니다.');
     await processNote(note.id);
   } catch (error) { message(error.message, true); }
-  finally { $('submit-button').disabled = false; }
-};
+  finally { uploadBusy = false; updateRecordingControls(); }
+}
+
+$('submit-button').onclick = submitNote;
 
 $('retry-button').onclick = () => { if (currentId) processNote(currentId); };
 $('summary-button').onclick = () => { if (currentId) processNote(currentId, 'summary'); };
@@ -180,3 +158,4 @@ $('new-note').onclick = showComposer;
 let searchTimer;
 $('search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadNotes, 300); };
 loadNotes();
+initRecording();

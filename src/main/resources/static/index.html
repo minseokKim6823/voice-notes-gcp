@@ -8,32 +8,41 @@
   <link rel="stylesheet" href="/search.css">
   <link rel="stylesheet" href="/speakers.css">
   <link rel="stylesheet" href="/progress.css">
+  <link rel="stylesheet" href="/recording.css">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
       <div class="brand"><span class="brand-icon">◉</span><span>보이스 노트</span></div>
       <button id="new-note" class="new-button">＋ 새 노트</button>
+      <a href="/analytics.html" style="color:#c9f1a8;margin:0 10px 18px;font-size:13px">처리 분석 ↗</a>
       <input id="search" class="search-input" type="search" placeholder="전사 내용 검색" aria-label="전사 내용 검색">
       <div class="section-label">내 노트</div>
       <div id="note-list" class="note-list"></div>
-      <div class="sidebar-foot">Google Cloud 기반 음성 기록</div>
+      <div class="sidebar-foot">말하는 순간 시작되는 음성 기록</div>
     </aside>
     <main>
-      <header><span>모든 음성을, 다시 찾을 수 있는 기록으로</span><span class="header-tag">Google Speech · EXAONE · MongoDB</span></header>
+      <header><span>모든 음성을, 다시 찾을 수 있는 기록으로</span><span class="header-tag">녹음 · 전사 · 요약</span></header>
       <section id="empty-view" class="empty-view">
         <div class="eyebrow">VOICE NOTES</div>
         <h1>녹음이 끝나면<br><em>정리가 시작됩니다.</em></h1>
-        <p>회의와 강의의 음성을 업로드하거나 바로 녹음하세요.<br>화자별 한국어 전사와 핵심 요약을 하나의 노트에 담습니다.</p>
+        <p>마이크를 켜고 회의와 강의를 바로 녹음하세요.<br>녹음을 종료하면 한국어 전사와 핵심 요약이 자동으로 시작됩니다.</p>
         <div class="composer">
           <label for="title">노트 제목</label>
           <input id="title" type="text" placeholder="예: 월요일 팀 회의" maxlength="120">
           <div class="composer-actions">
-            <label class="upload-button" for="audio-file">↥ &nbsp;파일 선택</label>
-            <input id="audio-file" type="file" accept=".webm,.wav,.mp3,.flac,.ogg,audio/*" hidden>
             <button id="record-button" class="record-button">● &nbsp;녹음 시작</button>
+            <button id="cancel-recording" class="text-button" hidden>녹음 취소</button>
           </div>
-          <div id="selected-file" class="selected-file">webm · wav · mp3 · flac · ogg / 최대 30MB</div>
+          <p id="recording-time" class="recording-time" role="timer" hidden></p>
+          <p class="recording-help">녹음 종료 후 텍스트로 변환됩니다. 마이크 권한을 허용해 주세요.</p>
+          <audio id="recording-preview" controls hidden aria-label="녹음 미리 듣기"></audio>
+          <details id="file-picker" class="file-picker">
+            <summary>기존 음성 파일 사용</summary>
+            <label class="upload-button" for="audio-file">↥ &nbsp;파일 선택</label>
+            <input id="audio-file" type="file" accept=".webm,.wav,.mp3,.flac,.ogg,.m4a,.mp4,audio/*" hidden>
+          </details>
+          <div id="selected-file" class="selected-file">최대 24MB · webm, wav, mp3, flac, ogg, m4a</div>
           <button id="submit-button" class="submit-button" disabled>전사 및 요약 시작 →</button>
           <div id="upload-progress-panel" class="progress-panel" hidden>
             <div class="progress-heading"><span id="upload-progress-label" role="status">음성 업로드 중</span><span id="upload-progress-percent"></span></div>
@@ -77,6 +86,7 @@
   </div>
   <script src="/speakers.js" defer></script>
   <script src="/progress.js" defer></script>
+  <script src="/recording.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

@@ -50,7 +50,8 @@ class ExaoneApiClientTest {
     void stopServer() { if (server != null) server.stop(0); }
 
     private ExaoneApiClient client(String key, boolean template) {
-        return new ExaoneApiClient(json, baseUrl, key, "test-exaone", Duration.ofSeconds(5), 4096, template);
+        return new ExaoneApiClient(json, baseUrl, key, "test-exaone", Duration.ofSeconds(5), 4096, template,
+                new ProcessingAnalytics(org.mockito.Mockito.mock(ClickHouseAnalytics.class)));
     }
 
     @Test

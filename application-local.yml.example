@@ -10,13 +10,22 @@ spring:
       uri: mongodb://localhost:27017/voice_notes?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000
 
 voice-notes:
+  # Defaults match the local ClickHouse service in compose.yaml.
+  # analytics:
+  #   enabled: true
+  #   url: http://localhost:8123
+  #   database: voice_notes
+  #   username: voice_notes
+  #   password: local-analytics-only
+  stt-provider: whisper
+  # Set OPENAI_API_KEY in the server environment (never in browser JavaScript).
+  # whisper:
+  #   api-key: YOUR_OPENAI_API_KEY
   project-id: ""
   bucket: ""
   exaone:
-    # Chat Completions API base URL, including /v1 (or your provider's equivalent prefix).
-    base-url: ""
-    api-key: ""
-    # Use the exact model ID exposed by your API server, or a Dedicated endpoint ID.
-    model: LGAI-EXAONE/K-EXAONE-2.0-750B-A37B
-    # Disable only if the API gateway rejects chat_template_kwargs.
-    include-chat-template-kwargs: true
+    # GLM-4.7-Flash is listed as free on Z.ai's API pricing page.
+    # Set GLM_API_KEY in the server environment; do not commit API keys.
+    base-url: https://api.z.ai/api/paas/v4
+    model: glm-4.7-flash
+    include-chat-template-kwargs: false

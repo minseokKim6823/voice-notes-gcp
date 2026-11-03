@@ -44,6 +44,8 @@ class StorageWorkflowTest {
 
     @DynamicPropertySource
     static void isolatedStorage(DynamicPropertyRegistry properties) {
+        properties.add("voice-notes.analytics.enabled", () -> "false");
+        properties.add("voice-notes.stt-provider", () -> "google");
         properties.add("spring.datasource.url", () -> "jdbc:mariadb://127.0.0.1:53317/voice_notes_test");
         properties.add("spring.datasource.username", () -> "voice_notes_test");
         properties.add("spring.datasource.password", () -> "local-test-only");

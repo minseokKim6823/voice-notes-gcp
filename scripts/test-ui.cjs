@@ -35,6 +35,9 @@ let failProgressReads = 0;
 let holdUpload = false;
 let releaseUpload = null;
 let failUpload = false;
+let uploadCount = 0;
+let analyticsMode = 'data';
+let analyticsDays = '';
 
 function view(note) {
   const speakers = new Map();
@@ -67,11 +70,25 @@ const server = http.createServer(async (req, res) => {
       if (!mime) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, {'Content-Type':`${mime};charset=utf-8`}); res.end(fs.readFileSync(file)); return;
     }
+    if (pathname === '/api/analytics') {
+      analyticsDays = new URL(req.url, 'http://localhost').searchParams.get('days');
+      const groups = [
+        {stage:'workflow',action:'process',calls:4,succeeded:3,failed:1,avg_ms:2200},
+        {stage:'summary_request',action:'process',provider:'exaone',model:'test-model <img src=x onerror=alert(1)>',calls:5,succeeded:4,failed:1,avg_ms:1000,p95_ms:1800,input_tokens:100,output_tokens:20,input_usage_calls:4,output_usage_calls:4,token_calls:4,usage_calls:4},
+        {stage:'transcription',action:'retry',provider:'whisper',model:'whisper-1',calls:1,succeeded:1,failed:0,avg_ms:2000,p95_ms:2000,input_tokens:0,output_tokens:0,input_usage_calls:0,output_usage_calls:0,token_calls:0,usage_calls:0}
+      ];
+      const empty = analyticsMode === 'empty';
+      send(analyticsMode === 'offline' ? 503 : 200, {enabled:analyticsMode !== 'disabled',available:analyticsMode !== 'offline',days:Number(analyticsDays),pendingEvents:2,droppedEvents:analyticsMode === 'offline' ? 3 : 0,
+        groups:empty ? [] : groups, daily:empty ? [] : [{date:new Date().toISOString().slice(0,10),attempts:4,succeeded:3,failed:1}],
+        recentFailures:empty ? [] : [{occurred_at:'2026-11-03 00:00:00',note_id:id,attempt_id:otherId,action:'process',stage:'summary_request',model:'test-model',error_type:'IOException'}]});
+      return;
+    }
     if (pathname === '/api/notes') {
       if (req.method === 'GET') { send(200, [...notes.values()].map(view)); return; }
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
-      assert.match(Buffer.concat(chunks).toString(), /progress-upload.wav/);
+      assert.match(Buffer.concat(chunks).toString(), /progress-upload.wav|recording-\d+\.(webm|m4a|ogg)/);
+      uploadCount++;
       if (failUpload) { failUpload = false; send(502, {error:'테스트 업로드 오류'}); return; }
       if (holdUpload) { holdUpload = false; await new Promise((resolve) => { releaseUpload = resolve; }); releaseUpload = null; }
       const uploaded = {id:'33333333-3333-4333-8333-333333333333',title:'업로드 진행률 테스트',fileName:'progress-upload.wav',
@@ -150,6 +167,7 @@ async function main() {
   const executable = process.env.VOICE_NOTES_CHROME || (process.platform === 'win32'
     ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : 'google-chrome');
   const chrome = spawn(executable, ['--headless=new', '--no-first-run', '--no-default-browser-check',
+    '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--autoplay-policy=no-user-gesture-required', 'about:blank'], {stdio:'ignore', windowsHide:true});
   let launchError;
   chrome.on('error', (error) => { launchError = error; });
@@ -335,6 +353,7 @@ async function main() {
     await waitUI(() => document.getElementById('note-title').textContent === '업로드 진행률 테스트' && document.getElementById('note-status').textContent === '완료', 'upload and processing completion');
     assert.equal(await evaluate(() => document.getElementById('upload-progress-panel').hidden), true);
     assert.equal(await evaluate(() => document.getElementById('processing-progress').value), 100);
+    await waitUI(() => !uploadBusy && !document.getElementById('submit-button').disabled, 'upload request cleanup');
     console.log('PASS: upload byte progress waits for audio storage before processing');
 
     failUpload = true;
@@ -342,6 +361,65 @@ async function main() {
     await waitUI(() => document.getElementById('message').textContent === '테스트 업로드 오류' && !document.getElementById('submit-button').disabled, 'upload failure recovery');
     assert.equal(await evaluate(() => document.getElementById('upload-progress-panel').hidden), true);
     console.log('PASS: failed upload hides progress and restores retry controls');
+
+    await evaluate(() => document.getElementById('record-button').click());
+    await waitUI(() => recordingState === 'recording', 'microphone recording');
+    assert.equal(await evaluate(() => document.getElementById('submit-button').disabled && document.getElementById('audio-file').disabled), true);
+    await waitUI(() => document.getElementById('recording-time').textContent !== '녹음 중 00:00', 'recording timer');
+    const countBeforeRecording = uploadCount;
+    holdUpload = true;
+    await evaluate(() => { window.testTracks = recordingStream.getTracks(); document.getElementById('record-button').click(); });
+    await until(() => releaseUpload !== null, 'recording automatically submitted');
+    assert.equal(uploadCount, countBeforeRecording + 1);
+    assert.equal(await evaluate(() => window.testTracks.every((track) => track.readyState === 'ended')), true);
+    assert.equal(await evaluate(() => document.getElementById('record-button').disabled && document.getElementById('submit-button').disabled), true);
+    releaseUpload();
+    await waitUI(() => !uploadBusy && document.getElementById('note-status').textContent === '완료', 'recording transcribed');
+    console.log('PASS: actual MediaRecorder capture, elapsed time, automatic submission and microphone release');
+
+    await evaluate(() => { document.getElementById('new-note').click(); document.getElementById('record-button').click(); });
+    await waitUI(() => recordingState === 'recording', 'second recording');
+    await evaluate(() => { window.testTracks = recordingStream.getTracks(); document.getElementById('cancel-recording').click(); });
+    await waitUI(() => recordingState === 'idle', 'cancel recording');
+    assert.equal(await evaluate(() => window.testTracks.every((track) => track.readyState === 'ended')), true);
+    assert.equal(uploadCount, countBeforeRecording + 1);
+    assert.equal(await evaluate(() => document.getElementById('submit-button').disabled), true);
+    console.log('PASS: cancellation releases microphone and never submits discarded recording');
+
+    await evaluate(() => {
+      window.originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));
+      document.getElementById('record-button').click();
+    });
+    await waitUI(() => document.getElementById('message').textContent.includes('마이크 권한을 허용한 뒤'), 'permission denial');
+    assert.equal(await evaluate(() => !document.getElementById('record-button').disabled && !document.getElementById('audio-file').disabled), true);
+
+    await evaluate(() => {
+      navigator.mediaDevices.getUserMedia = () => new Promise((resolve) => { window.resolveMicrophone = resolve; });
+      document.getElementById('record-button').click();
+    });
+    await waitUI(() => recordingState === 'requesting', 'pending microphone permission');
+    await evaluate(async () => {
+      document.getElementById('cancel-recording').click();
+      const stream = await window.originalGetUserMedia({audio:true});
+      window.testTracks = stream.getTracks();
+      window.resolveMicrophone(stream);
+      navigator.mediaDevices.getUserMedia = window.originalGetUserMedia;
+    });
+    await waitUI(() => window.testTracks.every((track) => track.readyState === 'ended'), 'late permission stream released');
+    assert.equal(uploadCount, countBeforeRecording + 1);
+    console.log('PASS: permission denial and cancellation while permission is pending');
+
+    failUpload = true;
+    await evaluate(() => document.getElementById('record-button').click());
+    await waitUI(() => recordingState === 'recording', 'recording for retry');
+    await delay(1100);
+    await evaluate(() => document.getElementById('record-button').click());
+    await waitUI(() => !uploadBusy && document.getElementById('message').textContent === '테스트 업로드 오류', 'recording upload failure');
+    assert.equal(await evaluate(() => !document.getElementById('recording-preview').hidden && !document.getElementById('submit-button').disabled), true);
+    await evaluate(() => document.getElementById('submit-button').click());
+    await waitUI(() => !uploadBusy && document.getElementById('note-status').textContent === '완료', 'retry saved recording');
+    console.log('PASS: failed recording submission keeps preview and can retry without recording again');
     await evaluate((noteId) => document.querySelector(`[data-id="${noteId}"]`).click(), id);
     await waitUI(() => document.getElementById('note-title').textContent === '화자 기능 테스트', 'return to completed note');
 
@@ -351,8 +429,40 @@ async function main() {
     await cdp('Page.captureScreenshot', {format:'png',captureBeyondViewport:true}).then((result) => fs.writeFileSync(path.join(output, 'mobile.png'), Buffer.from(result.data, 'base64')));
     assert.deepEqual(exceptions, []);
     console.log('PASS: mobile layout and no uncaught browser exceptions');
+    await cdp('Emulation.setDeviceMetricsOverride', {width:1365,height:1000,deviceScaleFactor:1,mobile:false});
+    await cdp('Page.navigate', {url:`http://127.0.0.1:${server.address().port}/analytics.html`});
+    await waitUI(() => document.getElementById('attempts')?.textContent === '4', 'analytics loaded');
+    assert.equal(await evaluate(() => document.getElementById('success-rate').textContent), '75.0%');
+    assert.equal(await evaluate(() => document.getElementById('tokens').textContent), '120');
+    assert.equal(await evaluate(() => document.querySelectorAll('#model-rows img').length), 0);
+    assert.equal(await evaluate(() => document.getElementById('model-rows').textContent.includes('미제공')), true);
+    await evaluate(() => { const days = document.getElementById('days'); days.value = '30'; days.dispatchEvent(new Event('change')); });
+    await waitUI(() => document.getElementById('analytics-status').textContent.includes('최근 30일'), 'analytics date filter');
+    assert.equal(analyticsDays, '30');
+    await cdp('Page.captureScreenshot', {format:'png',captureBeyondViewport:true}).then((result) => fs.writeFileSync(path.join(output, 'analytics-desktop.png'), Buffer.from(result.data, 'base64')));
+    await cdp('Emulation.setDeviceMetricsOverride', {width:390,height:844,deviceScaleFactor:1,mobile:true});
+    assert.equal(await evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await cdp('Page.captureScreenshot', {format:'png',captureBeyondViewport:true}).then((result) => fs.writeFileSync(path.join(output, 'analytics-mobile.png'), Buffer.from(result.data, 'base64')));
+    analyticsMode = 'offline';
+    await evaluate(() => document.getElementById('refresh').click());
+    await waitUI(() => document.getElementById('analytics-status').textContent.includes('분석 저장소에 연결할 수 없습니다'), 'analytics offline');
+    assert.equal(await evaluate(() => document.getElementById('analytics-content').hidden), true);
+    assert.equal(await evaluate(() => document.getElementById('delivery-status').textContent.includes('저장 미확인 3개')), true);
+    analyticsMode = 'disabled';
+    await evaluate(() => document.getElementById('refresh').click());
+    await waitUI(() => document.getElementById('analytics-status').textContent.includes('수집이 꺼져'), 'analytics disabled');
+    analyticsMode = 'empty';
+    await evaluate(() => document.getElementById('refresh').click());
+    await waitUI(() => document.getElementById('analytics-status').textContent.includes('아직 처리 이력이 없습니다'), 'analytics empty');
+    assert.equal(await evaluate(() => document.getElementById('success-rate').textContent), '—');
+    assert.equal(await evaluate(() => document.getElementById('tokens').textContent), '—');
+    analyticsMode = 'data';
+    await evaluate(() => document.getElementById('refresh').click());
+    await waitUI(() => document.getElementById('attempts').textContent === '4', 'analytics recovery');
+    assert.deepEqual(exceptions, []);
+    console.log('PASS: analytics metrics, filter, safe model text, mobile, offline, disabled, empty and recovery');
     await cdp('Browser.close').catch(() => {});
-    console.log('UI tests passed (16 workflows). Screenshots: build/ui-test/desktop.png, mobile.png');
+    console.log('UI tests passed (21 workflows). Screenshots: build/ui-test/');
   } finally {
     if (releaseEdit) releaseEdit();
     if (releaseRead) releaseRead();

@@ -26,6 +26,7 @@ public class ExaoneApiClient {
     private final Duration timeout;
     private final int maxOutputTokens;
     private final boolean includeChatTemplateKwargs;
+    private final ProcessingAnalytics analytics;
 
     public ExaoneApiClient(ObjectMapper json,
             @Value("${voice-notes.exaone.base-url}") String baseUrl,
@@ -33,7 +34,8 @@ public class ExaoneApiClient {
             @Value("${voice-notes.exaone.model}") String model,
             @Value("${voice-notes.exaone.timeout}") Duration timeout,
             @Value("${voice-notes.exaone.max-output-tokens}") int maxOutputTokens,
-            @Value("${voice-notes.exaone.include-chat-template-kwargs}") boolean includeChatTemplateKwargs) {
+            @Value("${voice-notes.exaone.include-chat-template-kwargs}") boolean includeChatTemplateKwargs,
+            ProcessingAnalytics analytics) {
         this.json = json;
         this.baseUrl = baseUrl.trim().replaceAll("/+$", "");
         this.apiKey = apiKey.trim();
@@ -41,9 +43,23 @@ public class ExaoneApiClient {
         this.timeout = timeout;
         this.maxOutputTokens = maxOutputTokens;
         this.includeChatTemplateKwargs = includeChatTemplateKwargs;
+        this.analytics = analytics;
     }
 
     public String complete(String prompt) throws IOException {
+        try (var measurement = analytics.stage("summary_request", "exaone", model)) {
+            try {
+                String result = completeRequest(prompt, measurement);
+                measurement.success();
+                return result;
+            } catch (IOException | RuntimeException error) {
+                measurement.failure(error);
+                throw error;
+            }
+        }
+    }
+
+    private String completeRequest(String prompt, ProcessingAnalytics.Measurement measurement) throws IOException {
         if (baseUrl.isBlank()) throw new IllegalStateException("EXAONE_BASE_URL에 API 기본 주소(/v1 포함)를 설정하세요.");
         if (model.isBlank()) throw new IllegalStateException("EXAONE_MODEL에 API 서버의 모델명을 설정하세요.");
         if (timeout.isZero() || timeout.isNegative() || maxOutputTokens < 1) {
@@ -90,6 +106,8 @@ public class ExaoneApiClient {
             try { result = json.readTree(response.body()); }
             catch (IOException e) { throw new IOException("EXAONE 응답이 올바른 JSON 형식이 아닙니다."); }
             if (result == null) throw new IOException("EXAONE API 응답이 비어 있습니다.");
+            JsonNode usage = result.path("usage");
+            measurement.tokens(tokenCount(usage.path("prompt_tokens")), tokenCount(usage.path("completion_tokens")));
             JsonNode choice = result.path("choices").path(0);
             if ("length".equals(choice.path("finish_reason").asText())) {
                 throw new IOException("EXAONE 요약이 출력 한도에서 잘렸습니다. EXAONE_MAX_OUTPUT_TOKENS를 늘려 다시 시도하세요.");
@@ -103,5 +121,8 @@ public class ExaoneApiClient {
             Thread.currentThread().interrupt();
             throw new IOException("EXAONE API 호출이 중단되었습니다.", e);
         }
+    }
+    private static Long tokenCount(JsonNode node) {
+        return node.isIntegralNumber() && node.canConvertToLong() && node.longValue() >= 0 ? node.longValue() : null;
     }
 }

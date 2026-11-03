@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>처리 분석 · 보이스 노트</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/analytics.css">
+  <script src="/analytics.js" defer></script>
+</head>
+<body>
+  <main class="analytics-page">
+    <nav><a href="/">← 보이스 노트</a><span>VOICE NOTES / ANALYTICS</span></nav>
+    <div class="analytics-heading">
+      <div><div class="eyebrow">PROCESSING INSIGHTS</div><h1>처리 분석</h1><p>전사부터 요약까지, 처리 시간과 사용량을 확인하세요.</p></div>
+      <form id="analytics-filter"><label for="days">조회 기간</label><select id="days"><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option></select><button type="submit" id="refresh">새로고침 ↻</button></form>
+    </div>
+    <p id="analytics-status" role="status" aria-live="polite">분석 데이터를 불러오는 중입니다.</p>
+    <p id="delivery-status" class="analytics-help" hidden></p>
+    <div id="analytics-content" hidden>
+      <section class="metric-grid" aria-label="처리 요약">
+        <article><span>완료된 처리 시도</span><strong id="attempts">—</strong><small>최초 처리 · 재시도 · 요약 재생성</small></article>
+        <article><span>처리 성공률</span><strong id="success-rate">—</strong><small id="failure-count">실패 —건</small></article>
+        <article><span>평균 처리 시간</span><strong id="average-time">—</strong><small>실패한 시도 포함</small></article>
+        <article><span>확인된 요약 토큰</span><strong id="tokens">—</strong><small id="usage-coverage">API에서 제공한 사용량 기준</small></article>
+      </section>
+      <section class="analytics-panel"><div class="panel-title"><h2>일별 처리</h2><span><i class="legend-success"></i> 성공 <i class="legend-failed"></i> 실패 · 최근 날짜순 · UTC</span></div><div id="daily-chart" class="daily-chart" aria-label="날짜별 성공 및 실패 건수"></div></section>
+      <section class="analytics-panel"><h2>모델별 성능과 사용량</h2><p class="analytics-help">요약은 분할·통합 요청을 각각 집계합니다. 전사 시간에는 원본 음성 조회가 포함됩니다. P95는 요청의 약 95%가 이 시간 안에 끝났다는 뜻입니다.</p><div class="table-scroll"><table><thead><tr><th>단계 / 모델</th><th>작업</th><th>호출</th><th>성공률</th><th>평균</th><th>P95</th><th>입력 토큰</th><th>출력 토큰</th><th>사용량 제공</th></tr></thead><tbody id="model-rows"></tbody></table></div></section>
+      <section class="analytics-panel"><h2>최근 실패</h2><p class="analytics-help">최근 20개 실패 이벤트입니다. 동일한 처리 시도에서 단계 실패와 전체 처리 실패가 함께 기록될 수 있습니다.</p><div id="recent-failures"></div></section>
+      <p class="analytics-help">신규 처리부터 수집하며 약 5초 후 반영됩니다. 보관 기간은 90일입니다. 토큰 미제공은 0과 구분하며, 요금은 제공업체별 계약에 따라 달라 금액으로 환산하지 않습니다.</p>
+    </div>
+  </main>
+</body>
+</html>
