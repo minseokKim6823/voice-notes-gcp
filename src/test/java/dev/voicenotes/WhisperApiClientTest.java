@@ -1,5 +1,8 @@
 package dev.voicenotes;
 
+import dev.voicenotes.domain.*;
+import dev.voicenotes.infrastructure.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;

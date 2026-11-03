@@ -1,5 +1,11 @@
 package dev.voicenotes;
 
+import dev.voicenotes.api.*;
+import dev.voicenotes.application.*;
+import dev.voicenotes.domain.*;
+import dev.voicenotes.persistence.*;
+import dev.voicenotes.infrastructure.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

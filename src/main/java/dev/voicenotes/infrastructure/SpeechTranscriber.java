@@ -1,4 +1,7 @@
-package dev.voicenotes;
+package dev.voicenotes.infrastructure;
+
+import dev.voicenotes.application.ProcessingAnalytics;
+import dev.voicenotes.domain.TranscriptSegment;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;

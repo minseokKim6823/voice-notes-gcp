@@ -1,4 +1,6 @@
-package dev.voicenotes;
+package dev.voicenotes.application;
+
+import dev.voicenotes.infrastructure.ClickHouseAnalytics;
 
 import org.springframework.stereotype.Component;
 

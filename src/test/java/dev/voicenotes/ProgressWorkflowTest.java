@@ -1,5 +1,11 @@
 package dev.voicenotes;
 
+import dev.voicenotes.api.*;
+import dev.voicenotes.application.*;
+import dev.voicenotes.domain.*;
+import dev.voicenotes.persistence.*;
+import dev.voicenotes.infrastructure.*;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 

@@ -1,4 +1,12 @@
-package dev.voicenotes;
+package dev.voicenotes.persistence;
+
+import dev.voicenotes.domain.TranscriptSegment;
+
+import dev.voicenotes.api.*;
+import dev.voicenotes.application.*;
+import dev.voicenotes.domain.*;
+import dev.voicenotes.persistence.*;
+import dev.voicenotes.infrastructure.*;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

@@ -1,4 +1,6 @@
-package dev.voicenotes;
+package dev.voicenotes.infrastructure;
+
+import dev.voicenotes.api.AnalyticsController;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -12,7 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
-import static dev.voicenotes.ClickHouseAnalyticsTest.event;
+import static dev.voicenotes.infrastructure.ClickHouseAnalyticsTest.event;
 import static org.assertj.core.api.Assertions.*;
 
 /** Fixed isolated port only. Creates and removes its own randomly named database. */

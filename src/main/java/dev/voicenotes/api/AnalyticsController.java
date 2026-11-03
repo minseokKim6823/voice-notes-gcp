@@ -1,4 +1,6 @@
-package dev.voicenotes;
+package dev.voicenotes.api;
+
+import dev.voicenotes.infrastructure.ClickHouseAnalytics;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;

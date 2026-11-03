@@ -1,4 +1,7 @@
-package dev.voicenotes;
+package dev.voicenotes.infrastructure;
+
+import dev.voicenotes.api.AnalyticsController;
+import dev.voicenotes.application.ProcessingAnalytics;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;

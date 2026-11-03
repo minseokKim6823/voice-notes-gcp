@@ -1,4 +1,13 @@
-package dev.voicenotes;
+package dev.voicenotes.application;
+
+import dev.voicenotes.infrastructure.ExaoneApiClient;
+import dev.voicenotes.domain.TranscriptSegment;
+
+import dev.voicenotes.api.*;
+import dev.voicenotes.application.*;
+import dev.voicenotes.domain.*;
+import dev.voicenotes.persistence.*;
+import dev.voicenotes.infrastructure.*;
 
 import org.junit.jupiter.api.Test;
 
