@@ -1,8 +1,8 @@
 # 보이스 노트
 
-회의, 강의, 인터뷰의 음성을 텍스트와 요약으로 정리하고, 나중에 전사 내용으로 다시 찾을 수 있는 개인 학습용 음성 노트입니다. **녹음 시작 → 녹음 종료하고 전사**를 누르면 Whisper 한국어 전사와 GLM 요약을 자동으로 실행합니다. 기존 음성 파일도 선택할 수 있습니다.
+회의, 강의, 인터뷰의 음성을 텍스트와 요약으로 정리하고, 나중에 전사 내용으로 다시 찾을 수 있는 개인 학습용 음성 노트입니다. **녹음 시작 → 녹음 종료하고 전사**를 누르면 Whisper 한국어 전사와 LLM 요약을 자동으로 실행합니다. 기존 음성 파일도 선택할 수 있습니다.
 
-Spring Boot 3.5 / Java 17로 서버를 구성하고 OpenAI Whisper API, Google Cloud Storage, Z.ai GLM, MariaDB, MongoDB, ClickHouse를 연결합니다.
+Spring Boot 3.5 / Java 17로 서버를 구성하고 OpenAI Whisper API, Google Cloud Storage, Groq, MariaDB, MongoDB, ClickHouse를 연결합니다.
 
 ## 주요 기능
 
@@ -16,7 +16,7 @@ Spring Boot 3.5 / Java 17로 서버를 구성하고 OpenAI Whisper API, Google C
 | 발언별 화자 수정·분리 | 개별 발언을 기존 화자로 옮기거나 새 화자를 지정해 분리합니다. 전사 문장도 최대 5,000자로 수정할 수 있습니다. 발언 순서와 시간 정보는 유지합니다. |
 | 화자별 보기·내보내기 | 화자별 발언 수와 구간 시간을 표시하고, 선택한 화자의 발언만 필터링합니다. 전체 또는 필터링한 전사를 화자 이름과 함께 UTF-8 텍스트 파일로 저장합니다. |
 | 발언 구간 재생 | 시간 정보가 있는 발언의 시간 버튼을 누르면 원본 음성의 해당 위치부터 재생합니다. 시간 정보가 없는 기존 전사에는 재생 버튼을 비활성화합니다. |
-| AI 요약 | 무료로 표시된 Z.ai GLM-4.7-Flash API에 전사를 보내 화자별 발언, 핵심 내용, 결정 사항과 할 일을 정리합니다. 긴 녹취는 12,000자씩 나누어 요약합니다. |
+| AI 요약 | Groq 무료 플랜의 GPT-OSS 120B로 핵심 내용, 결정 사항과 할 일을 정리합니다. 긴 녹취는 3,000자씩 나누어 요약합니다. |
 | 수정 후 요약 재생성 | 화자나 발언을 수정한 뒤 기존 전사를 사용해 요약을 다시 생성합니다. 실패해도 수정 내용은 유지합니다. |
 | 노트 목록과 상세 조회 | 저장된 노트를 생성일 기준 최신순으로 보여 줍니다. 노트 상세 화면에서 제목, 생성 시간, 처리 상태, AI 요약, 전체 전사를 확인할 수 있습니다. |
 | 원본 음성 재생 | 노트에 저장된 원본 음성을 브라우저 오디오 플레이어로 재생해 전사 내용과 비교할 수 있습니다. |
@@ -27,7 +27,7 @@ Spring Boot 3.5 / Java 17로 서버를 구성하고 OpenAI Whisper API, Google C
 
 1. 아래 실행 안내에 따라 서버와 필요한 서비스를 준비한 뒤 `http://localhost:8080`에 접속합니다.
 2. 제목을 입력하고 **녹음 시작**을 누른 뒤 마이크 권한을 허용합니다. 녹음 중에는 경과 시간을 표시하고 **녹음 취소**로 버릴 수 있습니다.
-3. **녹음 종료하고 전사**를 누르면 음성 저장·Whisper 전사·GLM 요약이 자동으로 시작됩니다. 파일 전송이 실패하면 녹음 미리 듣기와 재시도 버튼을 사용할 수 있습니다.
+3. **녹음 종료하고 전사**를 누르면 음성 저장·Whisper 전사·LLM 요약이 자동으로 시작됩니다. 파일 전송이 실패하면 녹음 미리 듣기와 재시도 버튼을 사용할 수 있습니다.
 4. 노트 상세 화면에서 원본 음성, AI 요약, 전체 전사를 확인합니다. 실패한 노트는 오류 내용을 확인한 뒤 **다시 처리하기**를 누릅니다.
 5. 왼쪽 노트 목록에서 이전 기록을 열거나 **전사 내용 검색**에 검색어를 입력해 관련 노트를 찾습니다.
 6. **화자 관리**에서 이름을 저장하거나 합칠 화자를 선택합니다. 각 발언의 **화자 / 발언 편집**에서는 화자 변경, 새 화자로 분리, 문장 수정을 할 수 있습니다.
@@ -75,7 +75,7 @@ flowchart LR
     A[녹음 또는 파일 선택] --> B[GCS에 원본 음성 저장]
     B --> C[Whisper 한국어 전사]
     C --> D[MongoDB에 전사 저장]
-    D --> E[GLM 요약]
+    D --> E[LLM 요약]
     E --> F[MariaDB에 요약과 완료 상태 저장]
     F --> G[노트 조회와 음성 재생]
 ```
@@ -96,7 +96,7 @@ flowchart LR
 | 음성 원본 저장 | Google Cloud Storage |
 | 한국어 전사 | OpenAI Whisper API, `whisper-1`, `ko` |
 | 선택적 화자 구분 | Google Speech-to-Text V2, Chirp 3 (`VOICE_NOTES_STT_PROVIDER=google`) |
-| 회의 요약 | Z.ai GLM-4.7-Flash Chat Completions API |
+| 회의 요약 | Groq GPT-OSS 120B Chat Completions API |
 | 노트 정보·처리 상태·진행률·요약 저장 | 기존 MariaDB의 `voice_notes` 테이블 |
 | 화자별 전사 저장·본문 검색 | MongoDB, `voice_note_transcripts` 컬렉션 |
 
@@ -135,35 +135,24 @@ Whisper는 자동 화자 구분을 제공하지 않아 발언을 `미확인 화�
 [OpenAI 공식 안내](https://developers.openai.com/api/docs/guides/speech-to-text)는 호스팅된 `whisper-1`의 종료일을 2027년 2월 26일로 명시합니다. 이 구현은 요청한 Whisper 모델을 사용하며, 해당 API 종료 전에는 전사 엔진 교체가 필요합니다.
 
 
-## GLM 무료 API 연결
+## 무료 LLM 요약 설정
 
-기본 요약 엔진은 Z.ai API의 **GLM-4.7-Flash**입니다. Z.ai의 [공식 가격표](https://docs.z.ai/guides/overview/pricing)는 이 모델의 입력·출력 API 가격을 무료로 표시합니다. 계정, 요청 속도, 무료 제공 정책이 바뀔 수 있으므로 Z.ai 콘솔에서도 확인하세요. 모델을 직접 실행하는 설정이 아니므로 앱 PC의 750B 추론 속도 문제를 피할 수 있습니다.
+기본값은 **Groq Free Plan의 GPT-OSS 120B**입니다. 공식 안내의 약 500 tokens/s 처리량과 Production 지원을 고려해 속도·품질 균형용으로 선택했습니다. 모든 무료 모델 중 한국어 요약이 가장 정확하다고 검증한 결과는 아닙니다. 무료 요청·토큰 한도가 적용되며 유료 계정의 과금을 앱이 차단하지는 않습니다. [모델 비교와 한도](docs/free-llm.md)를 먼저 확인하세요.
 
-Z.ai 개발자 콘솔에서 API 키를 발급한 후 서버를 실행하는 PowerShell에서 환경 변수로 넣습니다. 키는 화면이나 저장소에 올리지 마세요.
+[Groq 콘솔](https://console.groq.com/keys)에서 키를 발급하고 `.env`에 넣은 뒤 서버를 재시작합니다.
 
-```powershell
-$env:GLM_API_KEY = 'YOUR_ZAI_API_KEY'
-.\gradlew.bat bootRun
+```properties
+LLM_PROVIDER=groq
+GROQ_API_KEY=YOUR_GROQ_KEY
+LLM_TIMEOUT_SECONDS=90
+LLM_MAX_OUTPUT_TOKENS=2048
 ```
 
-기본 설정은 `https://api.z.ai/api/paas/v4`, 모델 `glm-4.7-flash`를 사용하며 OpenAI 호환 Chat Completions 요청을 보냅니다. `.env`에 이전 EXAONE API 주소·모델이 설정되어 있으면 새 GLM 변수 또는 기본값과 충돌할 수 있으니 지우거나 GLM 값으로 바꾸세요.
+주소는 `https://api.groq.com/openai/v1`, 모델은 `openai/gpt-oss-120b`가 기본값입니다. `LLM_MODEL=openai/gpt-oss-20b`는 속도를 더 우선할 때 선택할 수 있습니다. `LLM_PROVIDER=glm`과 `GLM_API_KEY`를 지정하면 기존 무료 GLM-4.7-Flash도 사용할 수 있습니다. Groq 모드에서는 GLM·EXAONE 키를 읽거나 다른 제공업체로 자동 전환하지 않습니다.
 
-```yaml
-voice-notes:
-  exaone:
-    base-url: https://api.z.ai/api/paas/v4
-    model: glm-4.7-flash
-```
+GPT-OSS는 짧은 추론(`low`)과 최종 답변만 반환하도록 요청합니다. 입력은 3,000자씩 나누고 부분 요약도 같은 크기로 통합합니다. 인증 실패, 무료 한도, 시간 초과를 구분해 표시하고 저장된 전사는 보존합니다. 서버에 키를 설정한 다음 실패한 노트에서 **요약 생성** 또는 **다시 처리하기**를 누르세요.
 
-키를 입력한 뒤 서버를 재시작하고 실패한 노트에서 **다시 처리하기**를 누르면 저장된 전사를 사용해 요약부터 재시도합니다. 환경 변수로 설정한 키는 `.env`의 `GLM_API_KEY`에 실제 발급한 키를 넣고 파일을 커밋하지 마세요. 기존 환경 변수 `EXAONE_API_KEY`, `EXAONE_BASE_URL`, `EXAONE_MODEL`도 호환되며 `GLM_*` 변수가 우선합니다.
-
-- 요청: `POST {base-url}/chat/completions`, JSON `model`, `messages`, `stream: false`, `max_tokens`, `temperature`, `top_p`.
-- 인증: 키가 있으면 `Authorization: Bearer ...`.
-- 응답: `choices[0].message.content`를 최종 요약으로 사용합니다. 빈 응답과 `finish_reason: length`인 잘린 요약은 실패로 처리합니다.
-- GLM 요청은 호환성을 위해 `chat_template_kwargs` 없이 보냅니다.
-- 긴 녹취는 12,000자씩 요약한 뒤 통합합니다. 요약 실패 후 재시도하면 MongoDB에 저장된 전사를 재사용합니다.
-
-위 설정으로 Z.ai API를 연결합니다. 다른 인증·요청·응답 규격은 `ExaoneApiClient.java`에서 맞춰야 합니다.
+LLM 무료 사용과 Whisper STT·GCS 등의 비용은 별개입니다. 현재 작업 환경에 Groq 키가 없으면 실제 모델 속도·한국어 요약 품질은 확인할 수 없습니다. 자세한 설정·제약·공식 출처는 [무료 LLM 안내](docs/free-llm.md)에 있습니다.
 
 ## MariaDB와 MongoDB
 
@@ -229,15 +218,13 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | `DATABASE_URL` | `jdbc:mariadb://localhost:3306/voice_notes` |
 | `DATABASE_USER`, `DATABASE_PASSWORD` | 기존 MariaDB 인증 정보 |
 | `DATABASE_INIT_MODE` | `always`; SQL 사전 실행 시 `never` |
-| `GLM_BASE_URL`, `GLM_API_KEY` | `https://api.z.ai/api/paas/v4`, Z.ai API 키 |
-| `GLM_MODEL` | `glm-4.7-flash` |
-| `GLM_TIMEOUT` | `10m` |
+| `LLM_PROVIDER`, `GROQ_API_KEY` | `groq`, Groq API 키 |
+| `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` | 선택한 제공업체의 기본 모델·주소·키를 명시적으로 덮어쓰기 |
+| `LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS` | `90`, `2048` |
 | `OPENAI_API_KEY` | 서버 전용 Whisper API 키 |
 | `WHISPER_BASE_URL`, `WHISPER_TIMEOUT` | `https://api.openai.com/v1`, `10m` |
 | `VOICE_NOTES_STT_PROVIDER` | `whisper`; Google 전사는 `google` |
-| `EXAONE_*` | 예전 요약 설정 이름; 없을 때 GLM 설정 기본값과 호환 |
-| `EXAONE_MAX_OUTPUT_TOKENS` | `4096` |
-| `EXAONE_INCLUDE_CHAT_TEMPLATE_KWARGS` | `false` |
+| `GLM_API_KEY`, `EXAONE_BASE_URL`, `EXAONE_MODEL`, `EXAONE_API_KEY` | `glm` / `compatible` 모드에서 사용하는 이전 설정 |
 | `MONGODB_URI` | `mongodb://localhost:27017/voice_notes?serverSelectionTimeoutMS=5000&connectTimeoutMS=5000`; MongoDB 연결 URI |
 | `GOOGLE_CLOUD_PROJECT`, `VOICE_NOTES_BUCKET` | GCP 프로젝트와 버킷 |
 | `VOICE_NOTES_SPEECH_LOCATION`, `VOICE_NOTES_SPEECH_MODEL` | `us`, `chirp_3` |
@@ -249,7 +236,7 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | 요청 | 동작 |
 | --- | --- |
 | `POST /api/notes` | multipart `file`, 선택적 `title`; GCS 업로드·MariaDB 저장 |
-| `POST /api/notes/{id}/process` | 선택한 엔진으로 전사·MongoDB 저장·GLM 요약 |
+| `POST /api/notes/{id}/process` | 선택한 엔진으로 전사·MongoDB 저장·LLM 요약 |
 | `POST /api/notes/{id}/transcribe` | Google Speech-to-Text 전사만 실행·MongoDB 저장; 요약 미호출 |
 | `GET /api/notes/{id}/progress` | `id`, `status`, `progressPercent`, `processingStage`, `error`; 전사 본문 조회 없이 진행 상태 반환 |
 | `GET /api/notes` | 노트 목록; 전사 본문은 상세 조회에서 반환 |

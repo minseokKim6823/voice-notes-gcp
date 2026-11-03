@@ -30,6 +30,8 @@ class ExaoneApiClientTest {
     private final AtomicReference<String> authorization = new AtomicReference<>();
     private final AtomicReference<String> method = new AtomicReference<>();
     private int status = 200;
+    private String retryAfter;
+    private final java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
     private String response = """
             {"choices":[{"finish_reason":"stop","message":{
               "content":"  회의 요약: 출시일을 확정했습니다.  ","reasoning_content":"internal reasoning"}}]}
@@ -39,11 +41,13 @@ class ExaoneApiClientTest {
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/chat/completions", exchange -> {
+            requests.incrementAndGet();
             requestBody.set(json.readTree(exchange.getRequestBody()));
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             method.set(exchange.getRequestMethod());
             byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+            if (retryAfter != null) exchange.getResponseHeaders().set("Retry-After", retryAfter);
             exchange.sendResponseHeaders(status, bytes.length);
             exchange.getResponseBody().write(bytes);
             exchange.close();
@@ -52,17 +56,51 @@ class ExaoneApiClientTest {
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/";
     }
 
+    @Test
+    void usesGroqLowReasoningAndHidesReasoningFromTheSavedSummary() throws Exception {
+        var settings = new SummaryModelSettings(new org.springframework.mock.env.MockEnvironment()
+                .withProperty("voice-notes.summary.base-url", baseUrl).withProperty("GROQ_API_KEY", "test-key"));
+        var client = new ExaoneApiClient(json, settings, new ProcessingAnalytics(org.mockito.Mockito.mock(ClickHouseAnalytics.class)));
+        client.complete("한국어 회의 내용");
+        assertThat(requestBody.get().path("model").asText()).isEqualTo("openai/gpt-oss-120b");
+        assertThat(requestBody.get().path("reasoning_effort").asText()).isEqualTo("low");
+        assertThat(requestBody.get().path("include_reasoning").asBoolean(true)).isFalse();
+        assertThat(requestBody.get().path("max_completion_tokens").asInt()).isEqualTo(2048);
+        assertThat(requestBody.get().has("max_tokens")).isFalse();
+        assertThat(requestBody.get().has("chat_template_kwargs")).isFalse();
+    }
+
+    @Test
+    void retriesShortQuotaResetsOnceAndReportsDailyLimitsWithoutWaiting() {
+        status = 429;
+        retryAfter = "0";
+        assertThatThrownBy(() -> client("test-key").complete("회의"))
+                .isInstanceOf(IOException.class).hasMessageContaining("무료 플랜");
+        assertThat(requests.get()).isEqualTo(2);
+        retryAfter = "3600";
+        assertThatThrownBy(() -> client("test-key").complete("회의"))
+                .isInstanceOf(IOException.class).hasMessageContaining("429");
+        assertThat(requests.get()).isEqualTo(3);
+    }
+
     @AfterEach
     void stopServer() { if (server != null) server.stop(0); }
 
-    private ExaoneApiClient client(String key, boolean template) {
-        return new ExaoneApiClient(json, baseUrl, key, "test-exaone", Duration.ofSeconds(5), 4096, template,
+    private ExaoneApiClient client(String key) {
+        var env = new org.springframework.mock.env.MockEnvironment()
+                .withProperty("voice-notes.summary.provider", "compatible")
+                .withProperty("voice-notes.summary.base-url", baseUrl)
+                .withProperty("voice-notes.summary.api-key", key)
+                .withProperty("voice-notes.summary.model", "test-exaone")
+                .withProperty("voice-notes.summary.timeout-seconds", "5")
+                .withProperty("voice-notes.summary.max-output-tokens", "4096");
+        return new ExaoneApiClient(json, new SummaryModelSettings(env),
                 new ProcessingAnalytics(org.mockito.Mockito.mock(ClickHouseAnalytics.class)));
     }
 
     @Test
     void sendsChatCompletionsContractAndReadsFinalContent() throws Exception {
-        assertThat(client("test-key", true).complete("화자 1: 금요일에 출시합니다."))
+        assertThat(client("test-key").complete("화자 1: 금요일에 출시합니다."))
                 .isEqualTo("회의 요약: 출시일을 확정했습니다.");
         assertThat(method.get()).isEqualTo("POST");
         assertThat(authorization.get()).isEqualTo("Bearer test-key");
@@ -72,12 +110,13 @@ class ExaoneApiClientTest {
         assertThat(body.path("max_tokens").asInt()).isEqualTo(4096);
         assertThat(body.path("messages").path(0).path("role").asText()).isEqualTo("system");
         assertThat(body.path("messages").path(1).path("content").asText()).contains("화자 1:");
-        assertThat(body.path("chat_template_kwargs").path("enable_thinking").asBoolean()).isFalse();
+        assertThat(body.has("chat_template_kwargs")).isFalse();
+        assertThat(body.path("temperature").asDouble()).isEqualTo(0.2);
     }
 
     @Test
     void allowsGatewaysWithoutTemplateExtensionOrAuthentication() throws Exception {
-        client("", false).complete("요약해주세요");
+        client("").complete("요약해주세요");
         assertThat(authorization.get()).isNull();
         assertThat(requestBody.get().has("chat_template_kwargs")).isFalse();
     }
@@ -86,7 +125,7 @@ class ExaoneApiClientTest {
     void doesNotExposeRemoteErrorBody() {
         status = 401;
         response = "{\"error\":\"secret-token and private transcript\"}";
-        assertThatThrownBy(() -> client("secret-token", true).complete("private transcript"))
+        assertThatThrownBy(() -> client("secret-token").complete("private transcript"))
                 .isInstanceOf(IOException.class).hasMessageContaining("HTTP 401")
                 .hasMessageNotContaining("secret-token").hasMessageNotContaining("private transcript");
     }
@@ -94,21 +133,21 @@ class ExaoneApiClientTest {
     @Test
     void rejectsTruncatedSummaries() {
         response = "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"partial\"}}]}";
-        assertThatThrownBy(() -> client("", true).complete("회의"))
+        assertThatThrownBy(() -> client("").complete("회의"))
                 .isInstanceOf(IOException.class).hasMessageContaining("출력 한도");
     }
 
     @Test
     void rejectsReasoningOnlyResponses() {
         response = "{\"choices\":[{\"message\":{\"reasoning_content\":\"reasoning only\"}}]}";
-        assertThatThrownBy(() -> client("", true).complete("회의"))
+        assertThatThrownBy(() -> client("").complete("회의"))
                 .isInstanceOf(IOException.class).hasMessageContaining("요약이 없습니다");
     }
 
     @Test
     void rejectsInvalidJsonWithoutLeakingBody() {
         response = "private provider error page";
-        assertThatThrownBy(() -> client("", true).complete("회의"))
+        assertThatThrownBy(() -> client("").complete("회의"))
                 .isInstanceOf(IOException.class).hasMessageContaining("JSON")
                 .hasMessageNotContaining("private");
     }
@@ -116,8 +155,8 @@ class ExaoneApiClientTest {
     @Test
     void missingConfigurationFailsBeforeNetworkRequest() {
         baseUrl = "";
-        assertThatThrownBy(() -> client("", true).complete("회의"))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("EXAONE_BASE_URL");
+        assertThatThrownBy(() -> client("").complete("회의"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("LLM_BASE_URL");
         assertThat(requestBody.get()).isNull();
     }
 }

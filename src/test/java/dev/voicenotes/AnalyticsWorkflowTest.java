@@ -45,8 +45,12 @@ class AnalyticsWorkflowTest {
         });
         server.start();
         try {
-            var api = new ExaoneApiClient(new ObjectMapper(), "http://127.0.0.1:" + server.getAddress().getPort() + "/v1",
-                    "test-key", "test-model", Duration.ofSeconds(2), 4096, true, analytics);
+            var settings = new SummaryModelSettings(new org.springframework.mock.env.MockEnvironment()
+                    .withProperty("voice-notes.summary.provider", "compatible")
+                    .withProperty("voice-notes.summary.base-url", "http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
+                    .withProperty("voice-notes.summary.api-key", "test-key")
+                    .withProperty("voice-notes.summary.model", "test-model"));
+            var api = new ExaoneApiClient(new ObjectMapper(), settings, analytics);
             var google = mock(GoogleGateway.class);
             var transcripts = mock(MongoTranscriptStore.class);
             var repository = mock(NoteRepository.class);

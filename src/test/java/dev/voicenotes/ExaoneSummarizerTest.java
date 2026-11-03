@@ -21,13 +21,14 @@ class ExaoneSummarizerTest {
     @Test
     void reportsCompletedChunksAndWaitsForTheFinalMergeBeforeReportingComplete() throws Exception {
         ExaoneApiClient api = mock(ExaoneApiClient.class);
-        when(api.complete(anyString())).thenReturn("부분 요약", "부분 요약", "통합 요약");
+        when(api.complete(anyString())).thenReturn("부분 요약", "부분 요약", "부분 요약", "부분 요약", "부분 요약", "통합 요약");
         var progress = new java.util.ArrayList<Integer>();
         String result = new ExaoneSummarizer(api).summarize(List.of(
                 new TranscriptSegment(0, "1", "가".repeat(13000), 0, 0)), progress::add);
         assertThat(result).isEqualTo("통합 요약");
-        assertThat(progress).containsSubsequence(0, 33, 66, 100);
-        verify(api, times(3)).complete(anyString());
+        assertThat(progress).isSorted().containsSubsequence(0, 70, 100);
+        assertThat(progress.subList(0, progress.size() - 1)).allMatch(percent -> percent < 100);
+        verify(api, times(6)).complete(anyString());
     }
 
     @Test
