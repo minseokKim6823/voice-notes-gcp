@@ -109,7 +109,7 @@ public class NoteService {
         repository.save(note);
         try {
             updateProgress(note, "TRANSCRIBING", 5);
-            segments = google.transcribe(note.audioObject, percent -> updateProgress(note,
+            segments = speech.transcribe(note.audioObject, note.contentType, percent -> updateProgress(note,
                     "TRANSCRIBING", 5 + percent * 70 / 100));
             if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
             updateProgress(note, "SAVING_TRANSCRIPT", 78);

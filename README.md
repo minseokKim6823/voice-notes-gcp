@@ -86,6 +86,7 @@ flowchart LR
 | --- | --- | --- |
 | `UPLOADED` | 업로드 완료 | 원본 음성과 노트 정보가 저장됐습니다. |
 | `PROCESSING` | 처리 중 | 전사와 요약을 처리하고 있습니다. |
+| `TRANSCRIBED` | 전사 완료 | 전사만 처리한 노트입니다. 나중에 요약을 생성할 수 있습니다. |
 | `READY` | 완료 | 전사와 요약을 확인할 수 있습니다. |
 | `FAILED` | 처리 실패 | 처리 중 오류가 발생했으며 재시도할 수 있습니다. |
 
@@ -237,7 +238,7 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | --- | --- |
 | `POST /api/notes` | multipart `file`, 선택적 `title`; GCS 업로드·MariaDB 저장 |
 | `POST /api/notes/{id}/process` | 선택한 엔진으로 전사·MongoDB 저장·LLM 요약 |
-| `POST /api/notes/{id}/transcribe` | Google Speech-to-Text 전사만 실행·MongoDB 저장; 요약 미호출 |
+| `POST /api/notes/{id}/transcribe` | 선택한 엔진으로 전사만 실행·MongoDB 저장; 요약 미호출 |
 | `GET /api/notes/{id}/progress` | `id`, `status`, `progressPercent`, `processingStage`, `error`; 전사 본문 조회 없이 진행 상태 반환 |
 | `GET /api/notes` | 노트 목록; 전사 본문은 상세 조회에서 반환 |
 | `GET /api/notes/{id}` | 요약·화자별 전사 상세 조회 |
@@ -247,7 +248,7 @@ Cloud Run 배포는 자동으로 수행하지 않습니다. Cloud Run에서는 �
 | `PATCH /api/notes/{id}/segments/{sequence}` | JSON `{"text":"목요일까지 검증합니다."}`; 발언 내용 수정 |
 | `POST /api/notes/{id}/summary` | 수정한 화자·발언으로 요약 재생성; 전사는 재사용 |
 | `GET /api/notes/search?q=검색어` | 전사 본문 검색 |
-| `GET /api/notes/{id}/audio` | 원본 음성 재생 |
+| `GET /api/notes/{id}/audio` | 원본 음성 재생; HTTP Range 부분 요청으로 구간 이동 지원 |
 
 상세 조회와 편집 응답에는 `speakers`와 `segments` 배열, `summaryStale`이 포함됩니다. `speakers`의 각 항목은 `id`, 표시 이름인 `name`, 발언 수인 `segmentCount`, 구간 길이 합계인 `durationMs`를 제공합니다. `segments`에는 `sequence`, `speaker`(화자 ID), `speakerName`, `text`, `startMs`, `endMs`가 들어 있습니다. 이름을 지정하지 않은 화자는 `화자 {ID}`로 표시하며, 라벨이 없는 발언은 `미확인 화자`로 표시합니다.
 
