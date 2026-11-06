@@ -51,7 +51,7 @@ class StorageWorkflowTest {
     @Autowired org.springframework.data.mongodb.core.MongoTemplate mongo;
     @Autowired MockMvc mvc;
     @MockitoBean GoogleGateway google;
-    @MockitoBean ExaoneSummarizer exaone;
+    @MockitoBean TranscriptSummarizer summary;
 
     @DynamicPropertySource
     static void isolatedStorage(DynamicPropertyRegistry properties) {
@@ -70,7 +70,7 @@ class StorageWorkflowTest {
                 new TranscriptSegment(0, "1", "다음 주 금요일에 출시합니다.", 0, 1500),
                 new TranscriptSegment(1, "2", "테스트를 목요일까지 완료하겠습니다. 👍", 1600, 3000));
         when(google.transcribe(anyString(), any())).thenReturn(segments);
-        when(exaone.summarize(anyList(), any())).thenThrow(new IOException("temporary summary failure"))
+        when(summary.summarize(anyList(), any())).thenThrow(new IOException("temporary summary failure"))
                 .thenReturn("금요일 출시, 목요일 테스트 완료. 👍");
 
         Note uploaded = notes.create("마리아DB 통합 테스트", new MockMultipartFile(
@@ -107,7 +107,7 @@ class StorageWorkflowTest {
                             .content("{\"text\":\"수정검증특수단어 목요일 완료\"}"))
                     .andExpect(status().isOk());
             assertThat(notes.search("수정검증특수단어")).extracting(Note::id).contains(id);
-            when(exaone.summarize(anyList(), any())).thenReturn("김민수 👍: 금요일 출시, 목요일 검증 완료.");
+            when(summary.summarize(anyList(), any())).thenReturn("김민수 👍: 금요일 출시, 목요일 검증 완료.");
             mvc.perform(post("/api/notes/{id}/summary", id)).andExpect(status().isOk())
                     .andExpect(jsonPath("$.summaryStale").value(false));
             assertThat(repository.findById(id).orElseThrow().summaryStale).isFalse();

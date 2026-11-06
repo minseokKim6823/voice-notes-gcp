@@ -1,10 +1,6 @@
 package dev.voicenotes.infrastructure;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.application.*;
-import dev.voicenotes.domain.*;
-import dev.voicenotes.persistence.*;
-import dev.voicenotes.infrastructure.*;
+import dev.voicenotes.application.ProcessingAnalytics;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,13 +12,12 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class ExaoneApiClientTest {
+class SummaryApiClientTest {
     private final ObjectMapper json = new ObjectMapper();
     private HttpServer server;
     private String baseUrl;
@@ -60,7 +55,7 @@ class ExaoneApiClientTest {
     void usesGroqLowReasoningAndHidesReasoningFromTheSavedSummary() throws Exception {
         var settings = new SummaryModelSettings(new org.springframework.mock.env.MockEnvironment()
                 .withProperty("voice-notes.summary.base-url", baseUrl).withProperty("GROQ_API_KEY", "test-key"));
-        var client = new ExaoneApiClient(json, settings, new ProcessingAnalytics(org.mockito.Mockito.mock(ClickHouseAnalytics.class)));
+        var client = new SummaryApiClient(json, settings, new ProcessingAnalytics(org.mockito.Mockito.mock(ClickHouseAnalytics.class)));
         client.complete("한국어 회의 내용");
         assertThat(requestBody.get().path("model").asText()).isEqualTo("openai/gpt-oss-120b");
         assertThat(requestBody.get().path("reasoning_effort").asText()).isEqualTo("low");
@@ -86,7 +81,7 @@ class ExaoneApiClientTest {
     @AfterEach
     void stopServer() { if (server != null) server.stop(0); }
 
-    private ExaoneApiClient client(String key) {
+    private SummaryApiClient client(String key) {
         var env = new org.springframework.mock.env.MockEnvironment()
                 .withProperty("voice-notes.summary.provider", "compatible")
                 .withProperty("voice-notes.summary.base-url", baseUrl)
@@ -94,7 +89,7 @@ class ExaoneApiClientTest {
                 .withProperty("voice-notes.summary.model", "test-exaone")
                 .withProperty("voice-notes.summary.timeout-seconds", "5")
                 .withProperty("voice-notes.summary.max-output-tokens", "4096");
-        return new ExaoneApiClient(json, new SummaryModelSettings(env),
+        return new SummaryApiClient(json, new SummaryModelSettings(env),
                 new ProcessingAnalytics(org.mockito.Mockito.mock(ClickHouseAnalytics.class)));
     }
 

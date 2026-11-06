@@ -21,10 +21,10 @@ class WhisperWorkflowTest {
     private final GoogleGateway google = mock(GoogleGateway.class);
     private final WhisperApiClient whisper = mock(WhisperApiClient.class);
     private final MongoTranscriptStore transcripts = mock(MongoTranscriptStore.class);
-    private final ExaoneSummarizer exaone = mock(ExaoneSummarizer.class);
+    private final TranscriptSummarizer summary = mock(TranscriptSummarizer.class);
     private final NoteRepository repository = mock(NoteRepository.class);
     private final ProcessingAnalytics analytics = new ProcessingAnalytics(mock(ClickHouseAnalytics.class));
-    private final NoteService notes = new NoteService(google, transcripts, exaone, repository,
+    private final NoteService notes = new NoteService(google, transcripts, summary, repository,
             new SpeechTranscriber(google, whisper, "whisper", "chirp_3", analytics), analytics);
 
     @Test
@@ -40,7 +40,7 @@ class WhisperWorkflowTest {
         assertThat(result.progressPercent()).isEqualTo(100);
         assertThat(result.segments()).containsExactlyElementsOf(segments);
         verify(transcripts).save(entity.id, segments);
-        verifyNoInteractions(exaone);
+        verifyNoInteractions(summary);
         verify(google, never()).transcribe(anyString(), any());
     }
 
@@ -57,7 +57,7 @@ class WhisperWorkflowTest {
         var segments = List.of(new TranscriptSegment(0, "미확인", "금요일 출시합니다.", 100, 1500));
         when(whisper.transcribe(audio, "audio/mp4")).thenReturn(segments);
         when(transcripts.get(created.id())).thenReturn(List.of(), segments);
-        when(exaone.summarize(anyList(), any())).thenThrow(new IOException("summary unavailable")).thenReturn("금요일 출시");
+        when(summary.summarize(anyList(), any())).thenThrow(new IOException("summary unavailable")).thenReturn("금요일 출시");
         assertThatThrownBy(() -> notes.process(created.id())).hasMessage("summary unavailable");
         assertThat(entity.status).isEqualTo("FAILED");
         verify(transcripts).save(created.id(), segments);

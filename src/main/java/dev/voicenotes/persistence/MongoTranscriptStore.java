@@ -1,9 +1,6 @@
 package dev.voicenotes.persistence;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.application.*;
-import dev.voicenotes.domain.*;
-import dev.voicenotes.infrastructure.*;
+import dev.voicenotes.domain.TranscriptSegment;
 
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.annotation.Id;

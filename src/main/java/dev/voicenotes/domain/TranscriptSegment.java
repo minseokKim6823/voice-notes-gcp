@@ -1,10 +1,5 @@
 package dev.voicenotes.domain;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.application.*;
-import dev.voicenotes.persistence.*;
-import dev.voicenotes.infrastructure.*;
-
 public record TranscriptSegment(int sequence, String speaker, String text, long startMs, long endMs,
                                 String speakerName) {
     public TranscriptSegment(int sequence, String speaker, String text, long startMs, long endMs) {

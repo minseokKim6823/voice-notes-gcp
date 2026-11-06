@@ -15,15 +15,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Legacy name retained; supports Groq, GLM and Chat Completions compatible servers. */
+/** Chat Completions client shared by Groq, GLM and compatible summary providers. */
 @Component
-public class ExaoneApiClient {
+public class SummaryApiClient {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(10)).build();
     private final ObjectMapper json;
     private final SummaryModelSettings settings;
     private final ProcessingAnalytics analytics;
 
-    public ExaoneApiClient(ObjectMapper json, SummaryModelSettings settings, ProcessingAnalytics analytics) {
+    public SummaryApiClient(ObjectMapper json, SummaryModelSettings settings, ProcessingAnalytics analytics) {
         this.json = json;
         this.settings = settings;
         this.analytics = analytics;

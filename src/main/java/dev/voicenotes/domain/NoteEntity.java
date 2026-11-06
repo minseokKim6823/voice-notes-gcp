@@ -1,10 +1,5 @@
 package dev.voicenotes.domain;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.application.*;
-import dev.voicenotes.persistence.*;
-import dev.voicenotes.infrastructure.*;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;

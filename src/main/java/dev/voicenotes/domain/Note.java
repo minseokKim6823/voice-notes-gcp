@@ -1,10 +1,5 @@
 package dev.voicenotes.domain;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.application.*;
-import dev.voicenotes.persistence.*;
-import dev.voicenotes.infrastructure.*;
-
 import java.time.Instant;
 import java.util.List;
 

@@ -1,9 +1,14 @@
 package dev.voicenotes.application;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.domain.*;
-import dev.voicenotes.persistence.*;
-import dev.voicenotes.infrastructure.*;
+import dev.voicenotes.domain.Note;
+import dev.voicenotes.domain.NoteEntity;
+import dev.voicenotes.domain.NoteProgress;
+import dev.voicenotes.domain.TranscriptSegment;
+import dev.voicenotes.infrastructure.GoogleGateway;
+import dev.voicenotes.infrastructure.SpeechTranscriber;
+import dev.voicenotes.infrastructure.WhisperApiClient;
+import dev.voicenotes.persistence.MongoTranscriptStore;
+import dev.voicenotes.persistence.NoteRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,16 +26,16 @@ public class NoteService {
     private final GoogleGateway google;
     private final SpeechTranscriber speech;
     private final MongoTranscriptStore transcripts;
-    private final ExaoneSummarizer exaone;
+    private final TranscriptSummarizer summary;
     private final NoteRepository repository;
     private final ProcessingAnalytics analytics;
 
     public NoteService(GoogleGateway google, MongoTranscriptStore transcripts,
-            ExaoneSummarizer exaone, NoteRepository repository, SpeechTranscriber speech, ProcessingAnalytics analytics) {
+            TranscriptSummarizer summary, NoteRepository repository, SpeechTranscriber speech, ProcessingAnalytics analytics) {
         this.google = google;
         this.speech = speech;
         this.transcripts = transcripts;
-        this.exaone = exaone;
+        this.summary = summary;
         this.repository = repository;
         this.analytics = analytics;
     }
@@ -168,7 +173,7 @@ public class NoteService {
                 transcripts.save(note.id, segments);
             }
             updateProgress(note, "SUMMARIZING", 80);
-            note.summary = exaone.summarize(segments, percent -> updateProgress(note, "SUMMARIZING", 80 + percent * 15 / 100));
+            note.summary = summary.summarize(segments, percent -> updateProgress(note, "SUMMARIZING", 80 + percent * 15 / 100));
             updateProgress(note, "SAVING_NOTE", 98);
             note.summaryStale = false;
             note.status = "READY";

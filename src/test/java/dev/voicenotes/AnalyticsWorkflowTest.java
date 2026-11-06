@@ -50,7 +50,7 @@ class AnalyticsWorkflowTest {
                     .withProperty("voice-notes.summary.base-url", "http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
                     .withProperty("voice-notes.summary.api-key", "test-key")
                     .withProperty("voice-notes.summary.model", "test-model"));
-            var api = new ExaoneApiClient(new ObjectMapper(), settings, analytics);
+            var api = new SummaryApiClient(new ObjectMapper(), settings, analytics);
             var google = mock(GoogleGateway.class);
             var transcripts = mock(MongoTranscriptStore.class);
             var repository = mock(NoteRepository.class);
@@ -62,7 +62,7 @@ class AnalyticsWorkflowTest {
             when(transcripts.get(note.id)).thenAnswer(call -> saved.get());
             doAnswer(call -> { saved.set(call.getArgument(1)); return null; }).when(transcripts).save(eq(note.id), anyList());
             when(google.transcribe(anyString(), any())).thenReturn(segments);
-            var service = new NoteService(google, transcripts, new ExaoneSummarizer(api), repository,
+            var service = new NoteService(google, transcripts, new TranscriptSummarizer(api), repository,
                     new SpeechTranscriber(google, null, "google", "chirp_3", analytics), analytics);
 
             assertThatThrownBy(() -> service.process(note.id)).isInstanceOf(IOException.class);

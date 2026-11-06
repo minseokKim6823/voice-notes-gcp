@@ -30,10 +30,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ProgressWorkflowTest {
     private final GoogleGateway google = mock(GoogleGateway.class);
     private final MongoTranscriptStore transcripts = mock(MongoTranscriptStore.class);
-    private final ExaoneSummarizer exaone = mock(ExaoneSummarizer.class);
+    private final TranscriptSummarizer summary = mock(TranscriptSummarizer.class);
     private final NoteRepository repository = mock(NoteRepository.class);
     private final ProcessingAnalytics analytics = new ProcessingAnalytics(mock(ClickHouseAnalytics.class));
-    private final NoteService service = new NoteService(google, transcripts, exaone, repository,
+    private final NoteService service = new NoteService(google, transcripts, summary, repository,
             new SpeechTranscriber(google, null, "google", "chirp_3", analytics), analytics);
     private final NoteEntity note = new NoteEntity(UUID.randomUUID().toString(), "회의", "a.wav", "audio/a.wav", "audio/wav");
 
@@ -56,7 +56,7 @@ class ProgressWorkflowTest {
             progress.accept(100);
             return List.of(new TranscriptSegment(0, "1", "금요일 출시", 0, 1000));
         });
-        when(exaone.summarize(anyList(), any())).thenAnswer(call -> {
+        when(summary.summarize(anyList(), any())).thenAnswer(call -> {
             ((IntConsumer) call.getArgument(1)).accept(50);
             return "요약";
         });
@@ -87,7 +87,7 @@ class ProgressWorkflowTest {
     void failedSummaryKeepsPartialProgressAndRetryStartsANewRunUsingStoredTranscript() throws Exception {
         when(repository.findById(note.id)).thenReturn(Optional.of(note));
         when(transcripts.get(note.id)).thenReturn(List.of(new TranscriptSegment(0, "1", "안녕", 0, 1000)));
-        when(exaone.summarize(anyList(), any())).thenAnswer(call -> {
+        when(summary.summarize(anyList(), any())).thenAnswer(call -> {
             ((IntConsumer) call.getArgument(1)).accept(50);
             throw new IOException("summary offline");
         }).thenReturn("새 요약");
@@ -104,6 +104,6 @@ class ProgressWorkflowTest {
         when(repository.findById(note.id)).thenReturn(Optional.of(note));
         assertThat(service.progress(note.id).progressPercent()).isEqualTo(100);
         assertThat(service.progress(note.id).processingStage()).isEqualTo("COMPLETE");
-        verifyNoInteractions(transcripts, google, exaone);
+        verifyNoInteractions(transcripts, google, summary);
     }
 }
