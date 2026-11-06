@@ -1,9 +1,8 @@
 package dev.voicenotes.api;
 
-import dev.voicenotes.application.*;
-import dev.voicenotes.domain.*;
-import dev.voicenotes.persistence.*;
-import dev.voicenotes.infrastructure.*;
+import dev.voicenotes.application.NoteService;
+import dev.voicenotes.domain.Note;
+import dev.voicenotes.domain.NoteProgress;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

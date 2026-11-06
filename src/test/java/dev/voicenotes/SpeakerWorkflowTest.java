@@ -31,10 +31,10 @@ class SpeakerWorkflowTest {
     private final String id = UUID.randomUUID().toString();
     private final GoogleGateway google = mock(GoogleGateway.class);
     private final MongoTranscriptStore transcripts = mock(MongoTranscriptStore.class);
-    private final ExaoneSummarizer exaone = mock(ExaoneSummarizer.class);
+    private final TranscriptSummarizer summary = mock(TranscriptSummarizer.class);
     private final NoteRepository repository = mock(NoteRepository.class);
     private final ProcessingAnalytics analytics = new ProcessingAnalytics(mock(ClickHouseAnalytics.class));
-    private final NoteService notes = new NoteService(google, transcripts, exaone, repository,
+    private final NoteService notes = new NoteService(google, transcripts, summary, repository,
             new SpeechTranscriber(google, null, "google", "chirp_3", analytics), analytics);
     private final AtomicReference<List<TranscriptSegment>> stored = new AtomicReference<>();
     private NoteEntity entity;
@@ -69,7 +69,7 @@ class SpeakerWorkflowTest {
                 new TranscriptSegment(1, "2", "테스트하겠습니다.", 1600, 3000),
                 new TranscriptSegment(2, "1", "감사합니다.", 3500, 4000, "김민수 👍"));
         assertThat(entity.summary).isEqualTo("화자 1이 일정을 정했습니다.");
-        verifyNoInteractions(google, exaone);
+        verifyNoInteractions(google, summary);
     }
 
     @Test
@@ -117,12 +117,12 @@ class SpeakerWorkflowTest {
     @Test
     void summaryRegenerationUsesEditedNamesAndNeverRepeatsSpeechRecognition() throws Exception {
         notes.renameSpeaker(id, "1", "민수");
-        when(exaone.summarize(anyList(), any())).thenReturn("민수가 일정을 정했습니다.");
+        when(summary.summarize(anyList(), any())).thenReturn("민수가 일정을 정했습니다.");
         mvc.perform(post("/api/notes/{id}/summary", id)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("READY"))
                 .andExpect(jsonPath("$.summaryStale").value(false))
                 .andExpect(jsonPath("$.summary").value("민수가 일정을 정했습니다."));
-        verify(exaone).summarize(argThat(segments -> "민수".equals(segments.get(0).displayName())), any());
+        verify(summary).summarize(argThat(segments -> "민수".equals(segments.get(0).displayName())), any());
         verifyNoInteractions(google);
         assertThat(entity.summaryStale).isFalse();
     }
@@ -130,9 +130,9 @@ class SpeakerWorkflowTest {
     @Test
     void processingStaleReadyNoteAlsoRegeneratesSummary() throws Exception {
         notes.renameSpeaker(id, "1", "민수");
-        when(exaone.summarize(anyList(), any())).thenReturn("새 요약");
+        when(summary.summarize(anyList(), any())).thenReturn("새 요약");
         assertThat(notes.process(id).summaryStale()).isFalse();
-        verify(exaone).summarize(anyList(), any());
+        verify(summary).summarize(anyList(), any());
         verifyNoInteractions(google);
     }
 
@@ -144,19 +144,19 @@ class SpeakerWorkflowTest {
         assertThat(entity.summaryStale).isFalse();
         verify(transcripts, never()).save(anyString(), anyList());
         verify(repository, never()).save(any());
-        verifyNoInteractions(exaone, google);
+        verifyNoInteractions(summary, google);
     }
 
     @Test
     void failedSummaryKeepsExistingSummaryAndCorrectionsForRetry() throws Exception {
         notes.renameSpeaker(id, "1", "민수");
-        when(exaone.summarize(anyList(), any())).thenThrow(new IOException("요약 API 실패"));
+        when(summary.summarize(anyList(), any())).thenThrow(new IOException("요약 API 실패"));
         mvc.perform(post("/api/notes/{id}/summary", id)).andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.error").value("요약 API 실패"));
         assertThat(notes.get(id).status()).isEqualTo("FAILED");
         assertThat(notes.get(id).summary()).isEqualTo("화자 1이 일정을 정했습니다.");
         assertThat(notes.get(id).summaryStale()).isTrue();
-        doReturn("민수의 새 요약").when(exaone).summarize(anyList(), any());
+        doReturn("민수의 새 요약").when(summary).summarize(anyList(), any());
         assertThat(notes.process(id).status()).isEqualTo("READY");
         assertThat(notes.get(id).summaryStale()).isFalse();
         verifyNoInteractions(google);
@@ -218,7 +218,7 @@ class SpeakerWorkflowTest {
     void requiresTranscriptBeforeGeneratingSummary() {
         stored.set(List.of());
         assertThatThrownBy(() -> notes.regenerateSummary(id)).hasMessageContaining("전사 완료 후");
-        verifyNoInteractions(google, exaone);
+        verifyNoInteractions(google, summary);
         verify(repository, never()).save(any());
     }
 

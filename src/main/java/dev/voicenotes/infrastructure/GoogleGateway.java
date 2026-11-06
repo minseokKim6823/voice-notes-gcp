@@ -1,9 +1,6 @@
 package dev.voicenotes.infrastructure;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.application.*;
-import dev.voicenotes.domain.*;
-import dev.voicenotes.persistence.*;
+import dev.voicenotes.domain.TranscriptSegment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

@@ -1,9 +1,6 @@
 package dev.voicenotes.persistence;
 
-import dev.voicenotes.api.*;
-import dev.voicenotes.application.*;
-import dev.voicenotes.domain.*;
-import dev.voicenotes.infrastructure.*;
+import dev.voicenotes.domain.NoteEntity;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
