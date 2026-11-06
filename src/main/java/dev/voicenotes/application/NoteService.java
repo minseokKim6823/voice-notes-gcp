@@ -99,39 +99,10 @@ public class NoteService {
         requireEditable(note);
         List<TranscriptSegment> segments = transcripts.get(id);
         if (!segments.isEmpty()) {
-            note.status = "TRANSCRIBED";
-            note.processingStage = "TRANSCRIPTION_COMPLETE";
-            note.progressPercent = 100;
-            note.error = "";
-            repository.save(note);
-            return Note.from(note, segments);
+            return completeProcessing(note, segments, "TRANSCRIBED", "TRANSCRIPTION_COMPLETE");
         }
-
-        note.status = "PROCESSING";
-        note.error = "";
-        note.progressPercent = 0;
-        note.processingStage = "PREPARING";
-        repository.save(note);
-        try {
-            updateProgress(note, "TRANSCRIBING", 5);
-            segments = speech.transcribe(note.audioObject, note.contentType, percent -> updateProgress(note,
-                    "TRANSCRIBING", 5 + percent * 70 / 100));
-            if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
-            updateProgress(note, "SAVING_TRANSCRIPT", 78);
-            transcripts.save(note.id, segments);
-            note.status = "TRANSCRIBED";
-            note.processingStage = "TRANSCRIPTION_COMPLETE";
-            note.progressPercent = 100;
-            repository.save(note);
-            return Note.from(note, segments);
-        } catch (IOException | RuntimeException e) {
-            note.status = "FAILED";
-            note.processingStage = "FAILED";
-            note.progressPercent = Math.min(note.progressPercent, 99);
-            note.error = e.getMessage();
-            repository.save(note);
-            throw e;
-        }
+        return runProcessing(note, () -> completeProcessing(note, transcribeIfMissing(note, segments),
+                "TRANSCRIBED", "TRANSCRIPTION_COMPLETE"));
     }
 
     public synchronized Note regenerateSummary(String id) throws IOException {
@@ -155,32 +126,43 @@ public class NoteService {
     }
 
     private Note performSummary(NoteEntity note, boolean summaryOnly) throws IOException {
-        List<TranscriptSegment> segments = summaryOnly ? transcripts.get(note.id) : null;
-        if (summaryOnly && segments.isEmpty()) throw new IllegalStateException("전사 완료 후 요약을 생성할 수 있습니다.");
-        note.status = "PROCESSING";
-        note.error = "";
-        note.progressPercent = 0;
-        note.processingStage = "PREPARING";
+        List<TranscriptSegment> cached = summaryOnly ? transcripts.get(note.id) : null;
+        if (summaryOnly && cached.isEmpty()) throw new IllegalStateException("전사 완료 후 요약을 생성할 수 있습니다.");
         if (summaryOnly) note.summaryStale = true;
-        repository.save(note);
-        try {
-            if (segments == null) segments = transcripts.get(note.id);
-            if (segments.isEmpty()) {
-                updateProgress(note, "TRANSCRIBING", 5);
-                segments = speech.transcribe(note.audioObject, note.contentType, percent -> updateProgress(note, "TRANSCRIBING", 5 + percent * 70 / 100));
-                if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
-                updateProgress(note, "SAVING_TRANSCRIPT", 78);
-                transcripts.save(note.id, segments);
-            }
+        return runProcessing(note, () -> {
+            List<TranscriptSegment> segments = transcribeIfMissing(note, cached == null ? transcripts.get(note.id) : cached);
             updateProgress(note, "SUMMARIZING", 80);
             note.summary = summary.summarize(segments, percent -> updateProgress(note, "SUMMARIZING", 80 + percent * 15 / 100));
             updateProgress(note, "SAVING_NOTE", 98);
             note.summaryStale = false;
-            note.status = "READY";
-            note.processingStage = "COMPLETE";
-            note.progressPercent = 100;
-            repository.save(note);
-            return Note.from(note, segments);
+            return completeProcessing(note, segments, "READY", "COMPLETE");
+        });
+    }
+
+    private List<TranscriptSegment> transcribeIfMissing(NoteEntity note, List<TranscriptSegment> cached) throws IOException {
+        if (!cached.isEmpty()) return cached;
+        updateProgress(note, "TRANSCRIBING", 5);
+        List<TranscriptSegment> segments = speech.transcribe(note.audioObject, note.contentType,
+                percent -> updateProgress(note, "TRANSCRIBING", 5 + percent * 70 / 100));
+        if (segments.isEmpty()) throw new IOException("전사 결과가 비어 있습니다.");
+        updateProgress(note, "SAVING_TRANSCRIPT", 78);
+        transcripts.save(note.id, segments);
+        return segments;
+    }
+
+    @FunctionalInterface
+    private interface ProcessingWork {
+        Note run() throws IOException;
+    }
+
+    private Note runProcessing(NoteEntity note, ProcessingWork work) throws IOException {
+        note.status = "PROCESSING";
+        note.error = "";
+        note.progressPercent = 0;
+        note.processingStage = "PREPARING";
+        repository.save(note);
+        try {
+            return work.run();
         } catch (IOException | RuntimeException e) {
             note.status = "FAILED";
             note.processingStage = "FAILED";
@@ -189,6 +171,15 @@ public class NoteService {
             repository.save(note);
             throw e;
         }
+    }
+
+    private Note completeProcessing(NoteEntity note, List<TranscriptSegment> segments, String status, String stage) {
+        note.status = status;
+        note.processingStage = stage;
+        note.progressPercent = 100;
+        note.error = "";
+        repository.save(note);
+        return Note.from(note, segments);
     }
 
     private void updateProgress(NoteEntity note, String stage, int percent) {
